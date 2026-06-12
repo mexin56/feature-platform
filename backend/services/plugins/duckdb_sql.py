@@ -8,13 +8,17 @@ def execute(params: dict, ctx: dict, env) -> dict:
 
     sql = render(params["sql"], ctx)
     con = duckdb.connect()
-    rows = con.sql(f"select count(*) from ({sql})").fetchone()[0]
-    output = None
-    if params.get("output_name"):
-        out_dir = env.offline_dir / params["output_name"]
-        out_dir.mkdir(parents=True, exist_ok=True)
-        out_path = out_dir / f"{ctx['ds_nodash']}.parquet"
-        con.sql(f"COPY ({sql}) TO '{out_path.as_posix()}' (FORMAT PARQUET)")
-        output = str(out_path)
-    con.close()
-    return {"rows": int(rows), "output": output}
+    try:
+        rows = con.sql(f"select count(*) from ({sql})").fetchone()[0]
+        output = None
+        if params.get("output_name"):
+            out_dir = env.offline_dir / params["output_name"]
+            if not str(out_dir.resolve()).startswith(str(env.offline_dir.resolve())):
+                raise ValueError(f"输出路径越界: {params['output_name']}")
+            out_dir.mkdir(parents=True, exist_ok=True)
+            out_path = out_dir / f"{ctx['ds_nodash']}.parquet"
+            con.sql(f"COPY ({sql}) TO '{out_path.as_posix()}' (FORMAT PARQUET)")
+            output = str(out_path)
+        return {"rows": int(rows), "output": output}
+    finally:
+        con.close()

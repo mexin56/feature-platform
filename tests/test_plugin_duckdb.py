@@ -46,3 +46,9 @@ def test_duckdb_sql_bad_sql_raises(tmp_path):
     fn = get_plugin("duckdb_sql")
     with pytest.raises(Exception):
         fn({"sql": "select * from no_such_table"}, CTX, _env(tmp_path))
+
+
+def test_duckdb_sql_output_escape_rejected(tmp_path):
+    fn = get_plugin("duckdb_sql")
+    with pytest.raises(ValueError, match="越界"):
+        fn({"sql": "select 1", "output_name": "../escape"}, CTX, _env(tmp_path))
