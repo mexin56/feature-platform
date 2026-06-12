@@ -36,6 +36,7 @@ def run_task(db_path: str, ti_id: int, storage_dir: str) -> None:
         ctx = build_context(run.data_interval_start, run.data_interval_end)
         task_type, task_key, try_number, max_tries = (
             ti.task_type, ti.task_key, ti.try_number, ti.max_tries)
+        run_workflow_id = run.workflow_id
 
     stop = threading.Event()
 
@@ -76,4 +77,30 @@ def run_task(db_path: str, ti_id: int, storage_dir: str) -> None:
                    .values(state=state, result_json=result_json,
                            finished_at=datetime.utcnow()))
         db.commit()
+        if state == "success":
+            _register_production(Session, run_workflow_id, task_key, result_json)
     engine.dispose()
+
+
+def _register_production(Session, workflow_id: int, task_key: str,
+                         result_json: str | None) -> None:
+    """生产即注册:绑定 (workflow_id, task_key) 的特征组回写最近产出时间/行数。"""
+    from sqlalchemy import select
+
+    from ..models import FeatureGroup
+
+    rows = None
+    if result_json:
+        try:
+            rows = json.loads(result_json).get("rows")
+        except (ValueError, AttributeError):
+            rows = None
+    with Session() as db:
+        fgs = db.scalars(select(FeatureGroup).where(
+            FeatureGroup.workflow_id == workflow_id,
+            FeatureGroup.task_key == task_key)).all()
+        for fg in fgs:
+            fg.last_produced_at = datetime.utcnow()
+            fg.last_produced_rows = rows
+        if fgs:
+            db.commit()
