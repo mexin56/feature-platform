@@ -95,3 +95,14 @@ def test_materialize_warehouse_via_fetch(tmp_path, monkeypatch):
     assert r["rows"] == 1
     assert "dw.t_cust" in captured["sql"]
     assert query(env.online_db_path, fgid, "C9")["payload"]["v"] == 7
+
+
+def test_midnight_watermark_no_rechurn(tmp_path):
+    """datetime 数据 + 午夜水位:同时间戳行不被反复重灌(防字符串序死循环)。"""
+    env, fgid, Session = _setup(tmp_path)
+    _write_parquet(env, "select 'C1' cust_no, '2026-06-11 00:00:00' dt, 1 v")
+    fn = get_plugin("materialize")
+    r1 = fn({"feature_group_id": fgid}, CTX, env)
+    assert r1["rows"] == 1
+    r2 = fn({"feature_group_id": fgid}, CTX, env)
+    assert r2["rows"] == 0  # 修复前这里会是 1(无限重灌)

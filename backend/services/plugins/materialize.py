@@ -2,7 +2,8 @@
 params: {feature_group_id, connection_id?(warehouse 来源必填)}
 parquet 来源:duckdb 读 offline_dir/<location>/*.parquet;
 warehouse 来源:经连接 SELECT(复用 sql_pushdown 连接抽象)。
-event_time 口径:ISO 字符串比较;水位仅在可解析为日期/时间时推进。"""
+event_time 口径:ISO 字符串比较;水位仅在可解析为日期/时间时推进。
+迟到数据:event_time <= 水位的行不会被增量拾取;如需补录请重置特征组水位后重跑物化。"""
 import json
 from datetime import datetime
 
@@ -72,8 +73,10 @@ def execute(params: dict, ctx: dict, env) -> dict:
             entity_keys = json.loads(fg.entity_keys_json)
             et_col = fg.event_time_col
             wm = fg.materialize_watermark
-            wm_str = (wm.strftime("%Y-%m-%d %H:%M:%S") if wm and (wm.hour or wm.minute or wm.second)
-                      else (wm.strftime("%Y-%m-%d") if wm else None))
+            # 统一 datetime 格式化:午夜也输出完整时间串,避免午夜水位与当日数据的字符串序错误比较。
+            # 纯日期数据('YYYY-MM-DD')与完整时间串('YYYY-MM-DD HH:MM:SS')比较仍正确:
+            # '2026-06-15' < '2026-06-15 00:00:00'(前缀关系,两者都不重复)。
+            wm_str = wm.strftime("%Y-%m-%d %H:%M:%S") if wm else None
             kind, location = fg.offline_kind, fg.offline_location
 
         rows = _load_rows(params, env, kind, location, et_col, wm_str)
