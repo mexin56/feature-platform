@@ -1,0 +1,13 @@
+fastapi
+uvicorn[standard]
+sqlalchemy>=2.0
+bcrypt
+python-jose[cryptography]
+cryptography
+croniter
+duckdb
+pandas
+pyarrow
+pymysql
+pytest
+httpx
