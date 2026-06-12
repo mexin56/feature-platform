@@ -26,6 +26,7 @@ import {
 import {
   Button,
   Collapse,
+  Divider,
   Drawer,
   Form,
   Input,
@@ -334,7 +335,7 @@ function NodeDrawer({ node, open, onClose, onSave, isNew, connections, featureGr
           workflows={workflows}
         />
 
-        <Typography.Divider />
+        <Divider />
         <Typography.Text strong style={{ display: 'block', margin: '12px 0 8px' }}>通用参数</Typography.Text>
 
         <Form.Item name="retries" label="重试次数">
@@ -631,20 +632,16 @@ export default function WorkflowEditor() {
               label: '工作流元信息',
               children: (
                 <Form form={metaForm} layout="vertical">
-                  {isNew && (
-                    <>
-                      <Form.Item
-                        name="name"
-                        label="工作流名称"
-                        rules={[{ required: true, message: '请输入名称' }]}
-                      >
-                        <Input placeholder="如: user_credit_daily" />
-                      </Form.Item>
-                      <Form.Item name="description" label="描述">
-                        <Input.TextArea rows={2} placeholder="可选" />
-                      </Form.Item>
-                    </>
-                  )}
+                  <Form.Item
+                    name="name"
+                    label="工作流名称"
+                    rules={[{ required: true, message: '请输入名称' }]}
+                  >
+                    <Input placeholder="如: user_credit_daily" />
+                  </Form.Item>
+                  <Form.Item name="description" label="描述">
+                    <Input.TextArea rows={2} placeholder="可选" />
+                  </Form.Item>
 
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
                     <Form.Item

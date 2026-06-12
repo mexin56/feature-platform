@@ -29,11 +29,6 @@ export default function Workflows() {
   const [workflows, setWorkflows] = useState([])
   const [loading, setLoading] = useState(false)
 
-  // New workflow modal
-  const [newModal, setNewModal] = useState(false)
-  const [newBusy, setNewBusy] = useState(false)
-  const [newForm] = Form.useForm()
-
   // Trigger modal
   const [triggerModal, setTriggerModal] = useState(null) // workflow object
   const [triggerBusy, setTriggerBusy] = useState(false)
@@ -68,25 +63,6 @@ export default function Workflows() {
       load()
     } catch {
       // error shown by api.js
-    }
-  }
-
-  const handleNew = async (values) => {
-    setNewBusy(true)
-    try {
-      const wf = await api.post('/api/workflows', {
-        name: values.name,
-        description: values.description ?? '',
-        dag: { nodes: [], edges: [] },
-      })
-      message.success(`工作流 "${wf.name}" 已创建`)
-      setNewModal(false)
-      newForm.resetFields()
-      navigate(`/workflows/${wf.id}`)
-    } catch {
-      // shown by api.js
-    } finally {
-      setNewBusy(false)
     }
   }
 
@@ -203,7 +179,7 @@ export default function Workflows() {
           <Typography.Title level={4} style={{ margin: 0 }}>工作流</Typography.Title>
           <Typography.Text type="secondary">管理 DAG 工作流定义、调度与运维操作</Typography.Text>
         </div>
-        <Button type="primary" icon={<PlusOutlined />} onClick={() => { setNewModal(true); newForm.resetFields() }}>
+        <Button type="primary" icon={<PlusOutlined />} onClick={() => navigate('/workflows/new')}>
           新建工作流
         </Button>
       </div>
@@ -217,29 +193,6 @@ export default function Workflows() {
         size="small"
         locale={{ emptyText: '暂无工作流' }}
       />
-
-      {/* 新建工作流 Modal */}
-      <Modal
-        title="新建工作流"
-        open={newModal}
-        onCancel={() => { setNewModal(false); newForm.resetFields() }}
-        onOk={() => newForm.submit()}
-        confirmLoading={newBusy}
-        destroyOnClose
-      >
-        <Form form={newForm} layout="vertical" onFinish={handleNew}>
-          <Form.Item
-            name="name"
-            label="工作流名称"
-            rules={[{ required: true, message: '请输入工作流名称' }]}
-          >
-            <Input autoFocus placeholder="如: user_credit_daily" />
-          </Form.Item>
-          <Form.Item name="description" label="描述">
-            <Input.TextArea rows={2} placeholder="可选" />
-          </Form.Item>
-        </Form>
-      </Modal>
 
       {/* 触发 Modal */}
       <Modal
