@@ -189,3 +189,17 @@ class LineageEdge(Base):
     src: Mapped[str] = mapped_column(String(255), nullable=False)
     dst: Mapped[str] = mapped_column(String(255), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class ApiKey(Base):
+    """在线查询 API Key:仅存 sha256 哈希,明文只在创建时返回一次。"""
+
+    __tablename__ = "api_keys"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(128), unique=True, nullable=False)
+    key_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    calls: Mapped[int] = mapped_column(Integer, default=0)  # 调用量统计(按请求次数)
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
