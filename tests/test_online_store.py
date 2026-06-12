@@ -39,3 +39,12 @@ def test_missing_entity_key_raises(tmp_path):
     ensure_schema(db)
     with pytest.raises(ValueError, match="缺少主键列"):
         upsert(db, 1, [{"v": 1}], ["k"], None)
+
+
+def test_entity_key_value_with_separator_rejected(tmp_path):
+    import pytest
+
+    db = tmp_path / "online.db"
+    ensure_schema(db)
+    with pytest.raises(ValueError, match="分隔符"):
+        upsert(db, 1, [{"k": "a|b", "v": 1}], ["k"], None)

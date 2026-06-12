@@ -36,6 +36,8 @@ def build_entity_key(row: dict, entity_keys: list[str]) -> str:
     for k in entity_keys:
         if k not in row or row[k] is None:
             raise ValueError(f"缺少主键列: {k}")
+        if "|" in str(row[k]):
+            raise ValueError(f"主键值不能包含分隔符 '|': {k}={row[k]}")
         parts.append(str(row[k]))
     return "|".join(parts)
 
