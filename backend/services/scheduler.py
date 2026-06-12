@@ -6,17 +6,20 @@ from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import func, select
 
-from ..models import TaskInstance, Workflow, WorkflowRun, WorkflowVersion
+from ..models import Alert, TaskInstance, Workflow, WorkflowRun, WorkflowVersion
 
 HEARTBEAT_TIMEOUT_SEC = 60
 TERMINAL_STATES = ("success", "failed", "upstream_failed", "skipped")
 
 
 class Scheduler:
+    SLA_THROTTLE_SEC = 60
+
     def __init__(self, SessionLocal, settings=None, now_fn=None):
         self.SessionLocal = SessionLocal
         self.settings = settings
         self.now_fn = now_fn or (lambda: datetime.now(timezone.utc))
+        self._last_sla_check: datetime | None = None
 
     # ---- 时钟 ----
     def _now_utc(self) -> datetime:
@@ -194,8 +197,51 @@ class Scheduler:
                 ti.finished_at = now  # 重试延迟基准
             db.commit()
 
+    # ---- ④ SLA 检查(60s 节流;当天去重;判定口径:SLA 时刻后,昨天区间的
+    # scheduled run 应已 success——即"今天 HH:MM 前应完成昨日数据加工") ----
+    def check_sla(self) -> None:
+        now = self._now_utc()
+        if (self._last_sla_check is not None
+                and (now - self._last_sla_check).total_seconds() < self.SLA_THROTTLE_SEC):
+            return
+        self._last_sla_check = now
+        from .alerts import emit
+
+        with self.SessionLocal() as db:
+            wfs = db.scalars(select(Workflow).where(
+                Workflow.status == "online", Workflow.sla_time.isnot(None))).all()
+            for wf in wfs:
+                now_local = self._now_local(wf.timezone)
+                hh, mm = wf.sla_time.split(":")
+                sla_today = now_local.replace(hour=int(hh), minute=int(mm),
+                                              second=0, microsecond=0)
+                if now_local < sla_today:
+                    continue  # 今日 SLA 时刻未到
+                day_start = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
+                # NOTE: 使用 datetime.now(tz) 而非 utcnow(),避免夏令时/时区偏差导致 SLA 漏报
+                # 注意:SLA 去重以 Alert.created_at(naive UTC)与工作流本地 day_start 比较
+                # 存在时区偏差,部门级场景接受(同日判定误差最多数小时,只影响极端跨时区配置)
+                ok = db.scalar(select(WorkflowRun.id).where(
+                    WorkflowRun.workflow_id == wf.id,
+                    WorkflowRun.run_type == "scheduled",
+                    WorkflowRun.state == "success",
+                    WorkflowRun.data_interval_end >= day_start).limit(1))
+                if ok:
+                    continue
+                dup = db.scalar(select(Alert.id).where(
+                    Alert.kind == "sla_miss", Alert.workflow_id == wf.id,
+                    Alert.created_at >= day_start).limit(1))
+                if dup:
+                    continue
+                emit(db, project_id=wf.project_id, level="error", kind="sla_miss",
+                     title=f"工作流「{wf.name}」SLA 超时",
+                     detail=f"应在 {wf.sla_time} 前完成当日调度,当前仍未成功",
+                     workflow_id=wf.id)
+            db.commit()
+
     # ---- tick 主循环 ----
     def tick(self) -> None:
         self.schedule_cron_runs()
         self.advance_runs()
         self.reap_orphans()
+        self.check_sla()
