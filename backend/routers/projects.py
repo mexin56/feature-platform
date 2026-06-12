@@ -71,8 +71,11 @@ def create_project(body: ProjectIn, db=Depends(get_db), user=Depends(get_current
 @router.post("/{pid}/members")
 def add_member(pid: int, body: MemberIn, db=Depends(get_db), user=Depends(get_current_user)):
     _require_owner_or_admin(db, pid, user)
-    if db.get(User, body.user_id) is None:
+    target = db.get(User, body.user_id)
+    if target is None:
         raise HTTPException(404, "用户不存在")
+    if not target.is_active:
+        raise HTTPException(400, "目标用户已禁用")
     exists = db.scalar(select(ProjectMember).where(
         ProjectMember.project_id == pid, ProjectMember.user_id == body.user_id))
     if not exists:

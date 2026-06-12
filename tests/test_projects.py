@@ -47,3 +47,13 @@ def test_audit_logged(client, admin_headers):
     logs = client.get(f"/api/projects/{pid}/audit", headers=bob).json()
     assert logs[0]["action"] == "create_project"
     assert logs[0]["username"] == "bob"
+
+
+def test_add_disabled_user_rejected(client, admin_headers):
+    bob = _mk_user(client, admin_headers, "bob")
+    eve = _mk_user(client, admin_headers, "eve")
+    pid = client.post("/api/projects", json={"name": "p1", "description": ""}, headers=bob).json()["id"]
+    eve_id = next(u["id"] for u in client.get("/api/users", headers=admin_headers).json() if u["username"] == "eve")
+    client.patch(f"/api/users/{eve_id}", json={"is_active": False}, headers=admin_headers)
+    r = client.post(f"/api/projects/{pid}/members", json={"user_id": eve_id}, headers=bob)
+    assert r.status_code == 400
