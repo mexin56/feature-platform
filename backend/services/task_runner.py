@@ -78,7 +78,10 @@ def run_task(db_path: str, ti_id: int, storage_dir: str) -> None:
                            finished_at=datetime.utcnow()))
         db.commit()
         if state == "success":
-            _register_production(Session, run_workflow_id, task_key, result_json)
+            try:
+                _register_production(Session, run_workflow_id, task_key, result_json)
+            except Exception:  # noqa: BLE001  注册是元数据回写,失败不影响任务终态
+                traceback.print_exc()
     engine.dispose()
 
 
