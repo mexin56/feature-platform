@@ -119,6 +119,7 @@ class Scheduler:
             kind = "backfill" if r.run_type == "backfill" else "normal"
             groups.setdefault((r.workflow_id, kind), []).append(r)
         for (wf_id, kind), rs in groups.items():
+            rs.sort(key=lambda r: r.data_interval_start)
             if kind == "backfill":
                 cap = max(1, rs[0].parallel_degree)
             else:
@@ -135,7 +136,7 @@ class Scheduler:
         dag = json.loads(ver.dag_json)
         ups = upstream_map(dag)
         tis = {t.task_key: t for t in db.scalars(
-            select(TaskInstance).where(TaskInstance.run_id == run.id)).all()}
+            select(TaskInstance).where(TaskInstance.run_id == run.id).order_by(TaskInstance.task_key)).all()}
         now = self._now_utc()
         wf = db.get(Workflow, run.workflow_id)
         for key, ti in tis.items():
@@ -151,7 +152,8 @@ class Scheduler:
                 base = ti.finished_at or now
                 if now >= base + timedelta(seconds=ti.retry_delay_sec):
                     ti.state = "queued"
-        # abort 策略:出现 failed 即跳过所有未开始/待重试任务
+        # abort 仅以 failed 触发:upstream_failed 必然源自同 run 内某个 failed(重试耗尽的终态),
+        # 单独出现不可达;若加入触发条件,会在"强制置成功"恢复场景下误杀后续任务。
         if wf and wf.failure_policy == "abort" and any(
                 t.state == "failed" for t in tis.values()):
             for t in tis.values():
