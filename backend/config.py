@@ -17,6 +17,8 @@ class Settings:
         self.online_db_path = self.storage_dir / "online_store.db"
         # 测试模式:不启动 tick 线程,由测试手动驱动调度循环(Phase 1b 使用)
         self.sync_scheduler = sync_scheduler
+        self.max_workers = int(os.environ.get("FEATURE_PLATFORM_MAX_WORKERS", "4"))
+        self.tick_interval_sec = 5
 
     def ensure_dirs(self) -> None:
         for d in (self.offline_dir, self.logs_dir, self.scripts_dir):

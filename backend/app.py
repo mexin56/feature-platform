@@ -45,6 +45,42 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     ensure_column(engine, "workflow_runs", "parallel_degree", "INTEGER DEFAULT 1")
     _seed_admin(app.state.sessionmaker)
+
+    from .services.executor import Executor
+    from .services.scheduler import Scheduler
+
+    app.state.scheduler = Scheduler(app.state.sessionmaker, settings)
+    app.state.executor = Executor(app.state.sessionmaker, settings,
+                                  max_workers=settings.max_workers,
+                                  sync=settings.sync_scheduler)
+    app.state.scheduler_thread = None
+    if not settings.sync_scheduler:
+        import threading
+
+        stop = threading.Event()
+        app.state.scheduler_stop = stop
+
+        def _loop():
+            app.state.scheduler.reap_orphans()  # 启动期孤儿清理
+            while not stop.wait(settings.tick_interval_sec):
+                try:
+                    app.state.scheduler.tick()
+                    app.state.executor.poll()
+                except Exception:  # noqa: BLE001  调度循环永不退出
+                    import traceback
+
+                    traceback.print_exc()
+
+        @app.on_event("startup")
+        def _start_scheduler():
+            t = threading.Thread(target=_loop, daemon=True, name="scheduler")
+            app.state.scheduler_thread = t
+            t.start()
+
+        @app.on_event("shutdown")
+        def _stop_scheduler():
+            stop.set()
+
     return app
 
 
