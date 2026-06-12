@@ -44,6 +44,8 @@ def _validate(db, body: FeatureGroupIn, pid: int) -> None:
         raise HTTPException(400, "特征名重复")
     if body.ttl_days is not None and body.ttl_days < 1:
         raise HTTPException(400, "TTL 须 ≥1 天")
+    if body.online_enabled and not body.event_time_col:
+        raise HTTPException(400, "启用在线服务须指定事件时间列(物化水位与 TTL 依赖它)")
     if (body.workflow_id is None) != (body.task_key is None):
         raise HTTPException(400, "workflow_id 与 task_key 须同时提供")
     if body.workflow_id is not None:
@@ -135,6 +137,11 @@ def update_feature_group(fid: int, body: FeatureGroupIn, db=Depends(get_db),
                          user=Depends(get_current_user), pid=Depends(get_project_id)):
     fg = _get_in_project(db, fid, pid)
     _validate(db, body, pid)
+    head_ver = db.scalar(select(FeatureGroup.version)
+                         .where(FeatureGroup.project_id == pid, FeatureGroup.name == fg.name)
+                         .order_by(FeatureGroup.version.desc()).limit(1))
+    if fg.version != head_ver:
+        raise HTTPException(409, f"该特征组已有更新版本 v{head_ver},请基于最新版本修改")
     old = db.scalars(select(Feature).where(Feature.feature_group_id == fid)).all()
     old_schema = {(f.name, f.dtype) for f in old}
     new_schema = {(f.name, f.dtype) for f in body.features}

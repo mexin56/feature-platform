@@ -102,3 +102,19 @@ def test_lineage_endpoint(client, admin_headers):
     edges = client.get("/api/lineage", headers=h).json()
     assert {"src": "table:dw.cust_base", "dst": f"feature_group:{fid}"} in [
         {"src": e["src"], "dst": e["dst"]} for e in edges]
+
+
+def test_online_requires_event_time(client, admin_headers):
+    h, pid = _mk_ws(client, admin_headers)
+    bad = {**FG, "online_enabled": True, "event_time_col": None}
+    assert client.post("/api/feature-groups", json=bad, headers=h).status_code == 400
+
+
+def test_put_stale_version_conflict(client, admin_headers):
+    h, pid = _mk_ws(client, admin_headers)
+    fid_v1 = client.post("/api/feature-groups", json=FG, headers=h).json()["id"]
+    feats2 = FG["features"] + [{"name": "f2", "dtype": "int", "description": ""}]
+    client.put(f"/api/feature-groups/{fid_v1}", json={**FG, "features": feats2}, headers=h)
+    # 对旧版本行再 PUT → 409
+    assert client.put(f"/api/feature-groups/{fid_v1}", json={**FG, "description": "x"},
+                      headers=h).status_code == 409
