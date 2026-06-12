@@ -46,3 +46,9 @@ def test_viewer_readonly_enforced(client, admin_headers):
     assert client.get("/api/auth/me", headers=ro).status_code == 200
     # viewer 任何写操作被拒(403 在 get_current_user 层)
     assert client.post("/api/auth/change-password", json={"old_password": "ro123456", "new_password": "x1234567"}, headers=ro).status_code == 403
+
+
+def test_admin_cannot_demote_self(client, admin_headers):
+    admin_id = next(u["id"] for u in client.get("/api/users", headers=admin_headers).json() if u["username"] == "admin")
+    r = client.patch(f"/api/users/{admin_id}", json={"role": "developer"}, headers=admin_headers)
+    assert r.status_code == 400

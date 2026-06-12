@@ -53,6 +53,8 @@ def patch_user(user_id: int, body: UserPatchIn, db=Depends(get_db), admin=Depend
         raise HTTPException(404, "用户不存在")
     if u.id == admin.id and body.is_active is False:
         raise HTTPException(400, "不能禁用自己")
+    if u.id == admin.id and body.role is not None and body.role != "admin":
+        raise HTTPException(400, "不能降级自己的管理员角色")
     if body.role is not None:
         if body.role not in ROLES:
             raise HTTPException(400, f"角色须为 {ROLES}")
