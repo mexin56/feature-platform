@@ -77,6 +77,9 @@ class Executor:
                 if proc.is_alive() and run is not None and run.state == "stopped":
                     proc.terminate()
                     proc.join(timeout=5)
+                    if proc.is_alive():  # terminate 未生效 → 强杀
+                        proc.kill()
+                        proc.join(1)
                     if ti.state == "running":
                         ti.state = "failed"
                         ti.finished_at = now

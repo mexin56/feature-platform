@@ -195,6 +195,8 @@ def mark_success(tid: int, db=Depends(get_db), user=Depends(get_current_user),
         raise HTTPException(400, "运行中的任务不能置成功,请先终止实例")
     ti.state = "success"
     ti.finished_at = datetime.utcnow()
+    # 运行中的 run 上对 failed/skipped 任务置成功是允许的(failure_policy=continue 场景),
+    # 此时 run 仍在调度推进,无需复活;仅失败/已终止的 run 需要复活以重新判定后续。
     if run.state in ("failed", "stopped"):
         run.state = "running"  # 复活实例让调度器重新判定后续
         run.finished_at = None
