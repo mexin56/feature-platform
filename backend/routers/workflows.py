@@ -1,4 +1,5 @@
 import json
+import re
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -23,6 +24,9 @@ class WorkflowIn(BaseModel):
     catchup: bool = False
     concurrency_limit: int = 1
     failure_policy: str = "continue"
+    alert_on_failure: bool = True
+    alert_on_success: bool = False
+    sla_time: str | None = None
 
 
 def _validate_meta(body: WorkflowIn) -> None:
@@ -45,6 +49,9 @@ def _validate_meta(body: WorkflowIn) -> None:
         raise HTTPException(400, f"失败策略须为 {FAILURE_POLICIES}")
     if body.concurrency_limit < 1:
         raise HTTPException(400, "并发上限须 ≥1")
+    if body.sla_time is not None:
+        if not re.match(r"^([01]\d|2[0-3]):[0-5]\d$", body.sla_time):
+            raise HTTPException(400, f"sla_time 格式非法,须为 HH:MM (00:00~23:59): {body.sla_time}")
 
 
 def _get_in_project(db, wid: int, pid: int) -> Workflow:
@@ -60,7 +67,10 @@ def _wf_out(db, wf: Workflow, with_dag: bool = False) -> dict:
            "timezone": wf.timezone, "catchup": wf.catchup,
            "concurrency_limit": wf.concurrency_limit, "failure_policy": wf.failure_policy,
            "status": wf.status, "version_no": ver.version_no if ver else None,
-           "created_at": wf.created_at.isoformat()}
+           "created_at": wf.created_at.isoformat(),
+           "alert_on_failure": wf.alert_on_failure,
+           "alert_on_success": wf.alert_on_success,
+           "sla_time": wf.sla_time}
     if with_dag and ver:
         out["dag"] = json.loads(ver.dag_json)
     return out
@@ -81,7 +91,8 @@ def create_workflow(body: WorkflowIn, db=Depends(get_db),
     wf = Workflow(project_id=pid, name=body.name, description=body.description, cron=body.cron,
                   timezone=body.timezone, catchup=body.catchup,
                   concurrency_limit=body.concurrency_limit, failure_policy=body.failure_policy,
-                  created_by=user.id)
+                  alert_on_failure=body.alert_on_failure, alert_on_success=body.alert_on_success,
+                  sla_time=body.sla_time, created_by=user.id)
     db.add(wf)
     db.flush()
     ver = WorkflowVersion(workflow_id=wf.id, version_no=1,
@@ -113,6 +124,8 @@ def update_workflow(wid: int, body: WorkflowIn, db=Depends(get_db),
     wf.name, wf.description, wf.cron = body.name, body.description, body.cron
     wf.timezone, wf.catchup = body.timezone, body.catchup
     wf.concurrency_limit, wf.failure_policy = body.concurrency_limit, body.failure_policy
+    wf.alert_on_failure, wf.alert_on_success, wf.sla_time = (
+        body.alert_on_failure, body.alert_on_success, body.sla_time)
     cur = db.get(WorkflowVersion, wf.current_version_id)
     new_dag = json.dumps(body.dag, ensure_ascii=False, sort_keys=True)
     if cur is None or cur.dag_json != new_dag:

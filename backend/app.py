@@ -60,6 +60,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     from .db import ensure_column
 
     ensure_column(engine, "workflow_runs", "parallel_degree", "INTEGER DEFAULT 1")
+    ensure_column(engine, "workflows", "alert_on_failure", "BOOLEAN DEFAULT 1")
+    ensure_column(engine, "workflows", "alert_on_success", "BOOLEAN DEFAULT 0")
+    ensure_column(engine, "workflows", "sla_time", "VARCHAR(5)")
     _seed_admin(app.state.sessionmaker)
 
     from .services.executor import Executor

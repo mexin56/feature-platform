@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .db import Base
@@ -84,6 +84,9 @@ class Workflow(Base):
     status: Mapped[str] = mapped_column(String(16), default="offline")  # online 才参与 cron 调度
     current_version_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     last_scheduled_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)  # cron 水位
+    alert_on_failure: Mapped[bool] = mapped_column(Boolean, default=True)
+    alert_on_success: Mapped[bool] = mapped_column(Boolean, default=False)
+    sla_time: Mapped[str | None] = mapped_column(String(5), nullable=True)  # "HH:MM" 工作流时区
     created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
@@ -203,3 +206,44 @@ class ApiKey(Base):
     calls: Mapped[int] = mapped_column(Integer, default=0)  # 调用量统计(按请求次数)
     created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class Alert(Base):
+    """站内告警。kind: run_failed/run_success/sla_miss/quality_drop/materialize_lag"""
+
+    __tablename__ = "alerts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    project_id: Mapped[int | None] = mapped_column(ForeignKey("projects.id"), nullable=True)
+    level: Mapped[str] = mapped_column(String(16), default="warning")  # info/warning/error
+    kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    detail: Mapped[str] = mapped_column(Text, default="")
+    workflow_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    run_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    read: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class QualityRecord(Base):
+    """特征质量记录:每次成功产出落一条,供环比突变检测与趋势展示。"""
+
+    __tablename__ = "quality_records"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    feature_group_id: Mapped[int] = mapped_column(ForeignKey("feature_groups.id"), nullable=False)
+    run_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    rows: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    distinct_keys: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    null_ratio: Mapped[float | None] = mapped_column(Float, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class SystemSetting(Base):
+    """全局 KV 配置(webhook_url、quality_drop_ratio 等),管理员维护。"""
+
+    __tablename__ = "system_settings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    key: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    value: Mapped[str] = mapped_column(Text, default="")
