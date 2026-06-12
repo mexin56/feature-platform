@@ -73,6 +73,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     ensure_column(engine, "workflows", "sla_time", "VARCHAR(5)")
     _seed_admin(app.state.sessionmaker)
 
+    _mount_frontend(app)
+
     from .services.executor import Executor
     from .services.scheduler import Scheduler
 
@@ -124,3 +126,24 @@ def _seed_admin(SessionLocal) -> None:
         if (db.scalar(select(func.count(User.id))) or 0) == 0:
             db.add(User(username="admin", password_hash=hash_password("admin123"), role="admin"))
             db.commit()
+
+
+def _mount_frontend(app: FastAPI) -> None:
+    """挂载前端构建产物(SPA);未构建时跳过,不影响纯 API 使用。"""
+    from pathlib import Path
+
+    from fastapi.responses import FileResponse
+    from fastapi.staticfiles import StaticFiles
+
+    dist = Path(__file__).resolve().parent.parent / "frontend" / "dist"
+    if not (dist / "index.html").exists():
+        return
+    if (dist / "assets").exists():
+        app.mount("/assets", StaticFiles(directory=dist / "assets"), name="assets")
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    def spa(full_path: str):
+        file = dist / full_path
+        if full_path and file.is_file():
+            return FileResponse(file)
+        return FileResponse(dist / "index.html")
