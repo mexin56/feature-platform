@@ -2,6 +2,7 @@ import {
   AlertOutlined,
   AppstoreOutlined,
   BranchesOutlined,
+  ConsoleSqlOutlined,
   DashboardOutlined,
   KeyOutlined,
   LogoutOutlined,
@@ -37,6 +38,7 @@ import Dashboard from './pages/Dashboard.jsx'
 import FeatureGroupDetail from './pages/FeatureGroupDetail.jsx'
 import FeatureGroups from './pages/FeatureGroups.jsx'
 import Login from './pages/Login.jsx'
+import QueryPage from './pages/Query.jsx'
 import RunDetail from './pages/RunDetail.jsx'
 import Runs from './pages/Runs.jsx'
 import WorkflowEditor from './pages/WorkflowEditor.jsx'
@@ -47,6 +49,7 @@ const MENU = [
   { key: '/feature-groups', icon: <AppstoreOutlined />, label: '特征组' },
   { key: '/workflows', icon: <BranchesOutlined />, label: '工作流' },
   { key: '/runs', icon: <PlayCircleOutlined />, label: '实例' },
+  { key: '/query', icon: <ConsoleSqlOutlined />, label: '数据查询' },
   { key: '/alerts', icon: <AlertOutlined />, label: '告警' },
 ]
 
@@ -285,6 +288,7 @@ export default function App() {
             <Route path="/workflows/:id" element={<WorkflowEditor />} />
             <Route path="/runs" element={<Runs />} />
             <Route path="/runs/:id" element={<RunDetail />} />
+            <Route path="/query" element={<QueryPage />} />
             <Route path="/alerts" element={<Alerts />} />
             {isAdmin && <Route path="/admin" element={<Admin />} />}
             <Route path="/login" element={<Navigate to="/" />} />
