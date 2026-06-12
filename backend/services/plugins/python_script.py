@@ -8,7 +8,9 @@ import sys
 def execute(params: dict, ctx: dict, env) -> dict:
     name = params["script"]
     script = (env.scripts_dir / name).resolve()
-    if not str(script).startswith(str(env.scripts_dir.resolve())):
+    try:
+        script.relative_to(env.scripts_dir.resolve())
+    except ValueError:
         raise ValueError(f"脚本路径越界: {name}")
     if not script.exists():
         raise FileNotFoundError(f"脚本不存在: {name}")
@@ -17,7 +19,7 @@ def execute(params: dict, ctx: dict, env) -> dict:
                 "FP_DATA_INTERVAL_START": ctx["data_interval_start"],
                 "FP_DATA_INTERVAL_END": ctx["data_interval_end"]}
     proc = subprocess.run([sys.executable, str(script)], env=env_vars,
-                          capture_output=True, text=True, encoding="utf-8")
+                          capture_output=True, text=True, encoding="utf-8", errors="replace")
     if proc.stdout:
         print(proc.stdout, end="")
     if proc.stderr:

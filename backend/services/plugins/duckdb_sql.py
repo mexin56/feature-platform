@@ -12,8 +12,10 @@ def execute(params: dict, ctx: dict, env) -> dict:
         rows = con.sql(f"select count(*) from ({sql})").fetchone()[0]
         output = None
         if params.get("output_name"):
-            out_dir = env.offline_dir / params["output_name"]
-            if not str(out_dir.resolve()).startswith(str(env.offline_dir.resolve())):
+            out_dir = (env.offline_dir / params["output_name"]).resolve()
+            try:
+                out_dir.relative_to(env.offline_dir.resolve())
+            except ValueError:
                 raise ValueError(f"输出路径越界: {params['output_name']}")
             out_dir.mkdir(parents=True, exist_ok=True)
             out_path = out_dir / f"{ctx['ds_nodash']}.parquet"
