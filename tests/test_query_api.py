@@ -103,3 +103,60 @@ def test_query_viewer_blocked(client, admin_headers):
     ro = {**_login(client, "ro", "ro123456"), "X-Project-Id": str(pid)}
     r = client.post("/api/query", json={"engine": "duckdb", "sql": "select 1"}, headers=ro)
     assert r.status_code == 403
+
+
+def test_catalog_duckdb_views_with_columns(client, admin_headers):
+    h, _ = _mk_ws(client, admin_headers)
+    _mk_fg_with_parquet(client, h, "select 'C1' cust_no, 1 v")
+    r = client.get("/api/query/catalog?engine=duckdb", headers=h)
+    assert r.status_code == 200, r.text
+    views = r.json()["views"]
+    demo = next(x for x in views if x["name"] == "demo_fg")
+    assert [c["name"] for c in demo["columns"]] == ["cust_no", "v"]
+
+
+def test_catalog_connection_databases_and_tables(client, admin_headers, monkeypatch):
+    h, _ = _mk_ws(client, admin_headers)
+    cid = client.post("/api/connections", json={
+        "name": "dw", "conn_type": "mysql", "host": "h", "port": 3306,
+        "username": "u", "password": "pw", "database": "dw"},
+        headers=admin_headers).json()["id"]
+    captured = {}
+
+    def fake_fetch(info, sql):
+        captured["sql"] = sql
+        if "DATABASES" in sql.upper():
+            return ["Database"], [("dw",), ("ods",)]
+        return ["Tables_in_dw"], [("t_cust",), ("t_txn",)]
+
+    from backend.services.plugins import materialize
+
+    monkeypatch.setattr(materialize, "_fetch_rows", fake_fetch)
+    r = client.get(f"/api/query/catalog?engine=connection&connection_id={cid}", headers=h)
+    assert r.json()["databases"] == ["dw", "ods"]
+    r = client.get(f"/api/query/catalog?engine=connection&connection_id={cid}&db=dw",
+                   headers=h)
+    assert r.json()["tables"] == ["t_cust", "t_txn"]
+    assert "dw" in captured["sql"]
+    # 非法库名拒绝
+    r = client.get(f"/api/query/catalog?engine=connection&connection_id={cid}&db=bad;name",
+                   headers=h)
+    assert r.status_code == 400
+
+
+def test_export_csv(client, admin_headers):
+    h, _ = _mk_ws(client, admin_headers)
+    _mk_fg_with_parquet(client, h, "select 'C1' cust_no, 1 v union all select 'C2', 2")
+    r = client.post("/api/query/export", json={
+        "engine": "duckdb", "sql": "select cust_no, v from demo_fg order by cust_no"},
+        headers=h)
+    assert r.status_code == 200, r.text
+    assert "text/csv" in r.headers["content-type"]
+    text = r.content.decode("utf-8-sig")
+    lines = text.strip().splitlines()
+    assert lines[0] == "cust_no,v"
+    assert lines[1] == "C1,1" and lines[2] == "C2,2"
+    # 只读防呆同样生效
+    r = client.post("/api/query/export", json={"engine": "duckdb", "sql": "drop table x"},
+                    headers=h)
+    assert r.status_code == 400
