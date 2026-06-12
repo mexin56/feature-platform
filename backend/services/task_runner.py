@@ -24,65 +24,67 @@ def run_task(db_path: str, ti_id: int, storage_dir: str) -> None:
     engine = make_engine(db_path)
     Session = sessionmaker(bind=engine)
 
-    with Session() as db:
-        ti = db.get(TaskInstance, ti_id)
-        run = db.get(WorkflowRun, ti.run_id)
-        log_dir = settings.logs_dir / f"run_{run.id}"
-        log_dir.mkdir(parents=True, exist_ok=True)
-        log_path = log_dir / f"{ti.task_key}_try{ti.try_number}.log"
-        ti.log_path = str(log_path)
-        db.commit()
-        params = json.loads(ti.params_json)
-        ctx = build_context(run.data_interval_start, run.data_interval_end)
-        task_type, task_key, try_number, max_tries = (
-            ti.task_type, ti.task_key, ti.try_number, ti.max_tries)
-        run_workflow_id = run.workflow_id
+    try:
+        with Session() as db:
+            ti = db.get(TaskInstance, ti_id)
+            run = db.get(WorkflowRun, ti.run_id)
+            log_dir = settings.logs_dir / f"run_{run.id}"
+            log_dir.mkdir(parents=True, exist_ok=True)
+            log_path = log_dir / f"{ti.task_key}_try{ti.try_number}.log"
+            ti.log_path = str(log_path)
+            db.commit()
+            params = json.loads(ti.params_json)
+            ctx = build_context(run.data_interval_start, run.data_interval_end)
+            task_type, task_key, try_number, max_tries = (
+                ti.task_type, ti.task_key, ti.try_number, ti.max_tries)
+            run_workflow_id = run.workflow_id
 
-    stop = threading.Event()
+        stop = threading.Event()
 
-    def _beat():
-        while not stop.wait(HEARTBEAT_INTERVAL_SEC):
-            with Session() as hb:
-                row = hb.get(TaskInstance, ti_id)
-                if row is None or row.state != "running":
-                    return
-                row.heartbeat_at = datetime.utcnow()
-                hb.commit()
+        def _beat():
+            while not stop.wait(HEARTBEAT_INTERVAL_SEC):
+                with Session() as hb:
+                    row = hb.get(TaskInstance, ti_id)
+                    if row is None or row.state != "running":
+                        return
+                    row.heartbeat_at = datetime.utcnow()
+                    hb.commit()
 
-    beater = threading.Thread(target=_beat, daemon=True)
-    beater.start()
+        beater = threading.Thread(target=_beat, daemon=True)
+        beater.start()
 
-    state, result_json = "failed", None
-    with open(log_path, "a", encoding="utf-8") as f, \
-            contextlib.redirect_stdout(f), contextlib.redirect_stderr(f):
-        print(f"[task_runner] {task_key} try {try_number}/{max_tries} type={task_type}")
-        try:
-            fn = get_plugin(task_type)
-            result = fn(params, ctx, settings)
-            result_json = json.dumps(result, ensure_ascii=False)
-            state = "success"
-            print(f"[task_runner] success: {result_json}")
-        except Exception:
-            traceback.print_exc()
-            state = "up_for_retry" if try_number < max_tries else "failed"
-            print(f"[task_runner] -> {state}")
-    stop.set()
-
-    with Session() as db:
-        from sqlalchemy import update
-
-        # 原子终态写入:仅当仍为 running 时生效(stop/孤儿清理改写过则不覆盖)
-        db.execute(update(TaskInstance)
-                   .where(TaskInstance.id == ti_id, TaskInstance.state == "running")
-                   .values(state=state, result_json=result_json,
-                           finished_at=datetime.utcnow()))
-        db.commit()
-        if state == "success":
+        state, result_json = "failed", None
+        with open(log_path, "a", encoding="utf-8") as f, \
+                contextlib.redirect_stdout(f), contextlib.redirect_stderr(f):
+            print(f"[task_runner] {task_key} try {try_number}/{max_tries} type={task_type}")
             try:
-                _register_production(Session, run_workflow_id, task_key, result_json)
-            except Exception:  # noqa: BLE001  注册是元数据回写,失败不影响任务终态
+                fn = get_plugin(task_type)
+                result = fn(params, ctx, settings)
+                result_json = json.dumps(result, ensure_ascii=False)
+                state = "success"
+                print(f"[task_runner] success: {result_json}")
+            except Exception:
                 traceback.print_exc()
-    engine.dispose()
+                state = "up_for_retry" if try_number < max_tries else "failed"
+                print(f"[task_runner] -> {state}")
+        stop.set()
+
+        with Session() as db:
+            from sqlalchemy import update
+
+            # 原子终态写入:仅当仍为 running 时生效(stop/孤儿清理改写过则不覆盖)
+            db.execute(update(TaskInstance)
+                       .where(TaskInstance.id == ti_id, TaskInstance.state == "running")
+                       .values(state=state, result_json=result_json,
+                               finished_at=datetime.utcnow()))
+            db.commit()
+            if state == "success":
+                try:
+                    _register_production(Session, run_workflow_id, task_key, result_json)
+                except Exception:  # noqa: BLE001  注册是元数据回写,失败不影响任务终态
+                    traceback.print_exc()
+    finally:
+        engine.dispose()
 
 
 def _register_production(Session, workflow_id: int, task_key: str,
@@ -99,6 +101,8 @@ def _register_production(Session, workflow_id: int, task_key: str,
         except (ValueError, AttributeError):
             rows = None
     with Session() as db:
+        # 注意:同一 (workflow_id, task_key) 的所有版本行都会被回写;
+        # 消费方(物化/展示)须按 version 最大值取头部版本。
         fgs = db.scalars(select(FeatureGroup).where(
             FeatureGroup.workflow_id == workflow_id,
             FeatureGroup.task_key == task_key)).all()
