@@ -66,6 +66,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app.include_router(query_router.router, prefix="/api")
 
+    from .routers import datasets as datasets_router
+
+    app.include_router(datasets_router.router, prefix="/api")
+
     from . import models  # noqa: F401  确保模型注册
 
     Base.metadata.create_all(engine)

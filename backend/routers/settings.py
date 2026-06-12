@@ -8,7 +8,8 @@ from ..services.audit import record
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 
-ALLOWED_KEYS = ("webhook_url", "quality_drop_ratio", "materialize_lag_hours")
+ALLOWED_KEYS = ("webhook_url", "quality_drop_ratio", "materialize_lag_hours",
+                "tushare_token")
 
 
 class SettingIn(BaseModel):

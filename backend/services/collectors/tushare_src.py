@@ -7,6 +7,15 @@ from .base import DataSet
 from .tushare_client import get_pro, pro_bar
 
 
+def _pro(ctx: dict):
+    """pro 客户端:ctx.tushare_token(SystemSetting 经 data_collect 插件注入)
+    > 环境变量 FP_TUSHARE_TOKEN > tushare_client 内置默认。"""
+    import os
+
+    token = (ctx or {}).get("tushare_token") or os.environ.get("FP_TUSHARE_TOKEN")
+    return get_pro(token or None)
+
+
 def _reg(dataset: str, name: str, desc: str, mode: str, fetch) -> None:
     register(DataSet(
         key=f"tushare.{dataset}", source="tushare", name=name, module="tushare",
@@ -16,7 +25,7 @@ def _reg(dataset: str, name: str, desc: str, mode: str, fetch) -> None:
 
 def _snapshot_fetch(api_name: str):
     def fetch(args, ctx):
-        pro = get_pro()
+        pro = _pro(ctx)
         df = getattr(pro, api_name)(trade_date=c.nodash(c.ctx_dt(ctx)))
         return c.df_to_table(df)
     return fetch
@@ -24,7 +33,7 @@ def _snapshot_fetch(api_name: str):
 
 def fetch_limit_list(args, ctx):
     """涨跌停榜:新接口 limit_list_d 优先,旧版 limit_list 兜底(版本兼容)。"""
-    pro = get_pro()
+    pro = _pro(ctx)
     nd = c.nodash(c.ctx_dt(ctx))
     err = None
     for api in ("limit_list_d", "limit_list"):
@@ -39,14 +48,14 @@ def fetch_hs_const(args, ctx):
     """沪深股通成份:hs_type=SH/SZ 各一次调用后拼接。"""
     import pandas as pd
 
-    pro = get_pro()
+    pro = _pro(ctx)
     frames = [pro.hs_const(hs_type=t) for t in ("SH", "SZ")]
     return c.df_to_table(pd.concat(frames, ignore_index=True))
 
 
 def _per_symbol_fetch(api_name: str):
     def fetch(args, ctx):
-        pro = get_pro()
+        pro = _pro(ctx)
         limit = int((args or {}).get("limit", 8))
         return c.per_symbol_df(
             args, lambda sym: getattr(pro, api_name)(ts_code=sym, limit=limit))
@@ -55,7 +64,7 @@ def _per_symbol_fetch(api_name: str):
 
 def fetch_pro_bar_daily(args, ctx):
     """逐股前复权日线:必须经 tushare_client.pro_bar(api=pro)。"""
-    pro = get_pro()
+    pro = _pro(ctx)
     a = args or {}
     dt = c.ctx_dt(ctx)
     start = c.nodash(a.get("start_date") or c.days_before(dt, 30))
