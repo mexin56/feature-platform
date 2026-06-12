@@ -73,6 +73,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
         @app.on_event("startup")
         def _start_scheduler():
+            if app.state.scheduler_thread is not None and app.state.scheduler_thread.is_alive():
+                return  # 已在运行,防止重复启动(如 TestClient 多次进入)
             t = threading.Thread(target=_loop, daemon=True, name="scheduler")
             app.state.scheduler_thread = t
             t.start()
