@@ -64,3 +64,76 @@ class Connection(Base):
     database: Mapped[str] = mapped_column(String(128), default="")
     created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class Workflow(Base):
+    """工作流定义。修改 DAG 产生新 WorkflowVersion;实例持有版本快照。"""
+
+    __tablename__ = "workflows"
+    __table_args__ = (UniqueConstraint("project_id", "name", name="uq_workflow_project_name"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    project_id: Mapped[int | None] = mapped_column(ForeignKey("projects.id"), nullable=True)
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    description: Mapped[str] = mapped_column(Text, default="")
+    cron: Mapped[str | None] = mapped_column(String(64), nullable=True)  # None=仅手工触发
+    timezone: Mapped[str] = mapped_column(String(64), default="Asia/Shanghai")
+    catchup: Mapped[bool] = mapped_column(Boolean, default=False)
+    concurrency_limit: Mapped[int] = mapped_column(Integer, default=1)  # 同流最大并行实例数
+    failure_policy: Mapped[str] = mapped_column(String(16), default="continue")  # continue/abort
+    status: Mapped[str] = mapped_column(String(16), default="offline")  # online 才参与 cron 调度
+    current_version_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    last_scheduled_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)  # cron 水位
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class WorkflowVersion(Base):
+    __tablename__ = "workflow_versions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    workflow_id: Mapped[int] = mapped_column(ForeignKey("workflows.id"), nullable=False)
+    version_no: Mapped[int] = mapped_column(Integer, nullable=False)
+    dag_json: Mapped[str] = mapped_column(Text, nullable=False)  # {"nodes":[...],"edges":[...]}
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class WorkflowRun(Base):
+    """工作流实例:一次触发。绑定 data_interval(Airflow 语义)与定义版本快照。"""
+
+    __tablename__ = "workflow_runs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    workflow_id: Mapped[int] = mapped_column(ForeignKey("workflows.id"), nullable=False)
+    version_id: Mapped[int] = mapped_column(ForeignKey("workflow_versions.id"), nullable=False)
+    run_type: Mapped[str] = mapped_column(String(16), nullable=False)  # scheduled/manual/backfill
+    data_interval_start: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    data_interval_end: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    state: Mapped[str] = mapped_column(String(16), default="running")  # running/success/failed/stopped
+    triggered_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class TaskInstance(Base):
+    """任务实例:节点的一次执行。状态机见 spec §4.3;心跳供孤儿清理。"""
+
+    __tablename__ = "task_instances"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    run_id: Mapped[int] = mapped_column(ForeignKey("workflow_runs.id"), nullable=False)
+    task_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    task_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    params_json: Mapped[str] = mapped_column(Text, default="{}")  # 节点参数快照
+    # none/scheduled/queued/running/success/failed/up_for_retry/upstream_failed/skipped
+    state: Mapped[str] = mapped_column(String(20), default="none")
+    try_number: Mapped[int] = mapped_column(Integer, default=0)
+    max_tries: Mapped[int] = mapped_column(Integer, default=1)
+    retry_delay_sec: Mapped[int] = mapped_column(Integer, default=60)
+    timeout_sec: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    log_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    result_json: Mapped[str | None] = mapped_column(Text, nullable=True)  # 插件产出(如行数)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
