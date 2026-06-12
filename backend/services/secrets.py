@@ -12,3 +12,12 @@ def secret_key(storage_dir: Path) -> bytes:
     if not f.exists():
         f.write_bytes(Fernet.generate_key())
     return f.read_bytes()
+
+
+def encrypt_text(plaintext: str, storage_dir: Path) -> str:
+    """连接密码等敏感文本加密(Fernet,密钥同 JWT)。"""
+    return Fernet(secret_key(storage_dir)).encrypt(plaintext.encode("utf-8")).decode()
+
+
+def decrypt_text(token: str, storage_dir: Path) -> str:
+    return Fernet(secret_key(storage_dir)).decrypt(token.encode()).decode("utf-8")

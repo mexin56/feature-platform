@@ -48,3 +48,19 @@ class AuditLog(Base):
     action: Mapped[str] = mapped_column(String(64), nullable=False)
     detail: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class Connection(Base):
+    __tablename__ = "connections"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(128), unique=True, nullable=False)
+    # 连接类型:mysql / spark(Spark ThriftServer,PyHive)
+    conn_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    host: Mapped[str] = mapped_column(String(255), nullable=False)
+    port: Mapped[int] = mapped_column(Integer, nullable=False)
+    username: Mapped[str] = mapped_column(String(128), default="")
+    password_enc: Mapped[str] = mapped_column(Text, default="")  # Fernet 加密存储
+    database: Mapped[str] = mapped_column(String(128), default="")
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

@@ -49,3 +49,18 @@ def test_project_member_unique(tmp_path):
         db.add(ProjectMember(project_id=p.id, user_id=u.id))
         with pytest.raises(IntegrityError):
             db.commit()
+
+
+def test_connection_model(tmp_path):
+    from backend.models import Connection
+
+    engine = make_engine(tmp_path / "meta.db")
+    Base.metadata.create_all(engine)
+    Session = sessionmaker(bind=engine)
+    with Session() as db:
+        db.add(Connection(name="数仓", conn_type="spark", host="10.0.0.1", port=10000,
+                          username="hive", password_enc="enc", database="dw"))
+        db.commit()
+        c = db.query(Connection).one()
+        assert c.conn_type == "spark"
+        assert c.port == 10000
