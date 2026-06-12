@@ -91,3 +91,14 @@ def test_duplicate_name_rejected(client, admin_headers):
     h, _ = _mk_dev_with_project(client, admin_headers)
     client.post("/api/workflows", json=WF, headers=h)
     assert client.post("/api/workflows", json=WF, headers=h).status_code == 400
+
+
+def test_cannot_clear_cron_while_online(client, admin_headers):
+    h, _ = _mk_dev_with_project(client, admin_headers)
+    wid = client.post("/api/workflows", json=WF, headers=h).json()["id"]
+    client.post(f"/api/workflows/{wid}/online", headers=h)
+    r = client.put(f"/api/workflows/{wid}", json={**WF, "cron": None}, headers=h)
+    assert r.status_code == 400
+    # 下线后允许清除
+    client.post(f"/api/workflows/{wid}/offline", headers=h)
+    assert client.put(f"/api/workflows/{wid}", json={**WF, "cron": None}, headers=h).status_code == 200

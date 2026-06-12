@@ -104,6 +104,8 @@ def update_workflow(wid: int, body: WorkflowIn, db=Depends(get_db),
                     user=Depends(get_current_user), pid=Depends(get_project_id)):
     wf = _get_in_project(db, wid, pid)
     _validate_meta(body)
+    if wf.status == "online" and body.cron is None:
+        raise HTTPException(400, "上线中的工作流不能清除 Cron 表达式,请先下线")
     dup = db.scalar(select(Workflow).where(
         Workflow.project_id == pid, Workflow.name == body.name, Workflow.id != wid))
     if dup:
