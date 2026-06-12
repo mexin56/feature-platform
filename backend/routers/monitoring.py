@@ -1,14 +1,12 @@
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, select
 
 from ..deps import get_db, get_project_id
 from ..models import (
-    Alert, FeatureGroup, TaskInstance, Workflow, WorkflowRun,
+    Alert, FeatureGroup, Workflow, WorkflowRun,
 )
-from ..services.alerts import emit
-from ..services.notify import get_setting
 
 router = APIRouter(tags=["monitoring"])
 
@@ -64,31 +62,16 @@ def dashboard(db=Depends(get_db), pid=Depends(get_project_id)):
 
     fgs = db.scalars(select(FeatureGroup).where(FeatureGroup.project_id == pid)).all()
     now = datetime.utcnow()
-    try:
-        lag_threshold = float(get_setting(db, "materialize_lag_hours", "24"))
-    except ValueError:
-        lag_threshold = 24.0
     fg_out = []
     for fg in fgs:
         lag_hours = None
         if fg.online_enabled and fg.materialize_watermark is not None:
             lag_hours = round((now - fg.materialize_watermark).total_seconds() / 3600, 1)
-            if lag_hours > lag_threshold:
-                dup = db.scalar(select(Alert.id).where(
-                    Alert.kind == "materialize_lag", Alert.project_id == pid,
-                    Alert.detail.like(f"fg_id={fg.id};%"),
-                    Alert.created_at >= today).limit(1))
-                if dup is None:
-                    emit(db, project_id=pid, level="warning", kind="materialize_lag",
-                         title=f"特征组「{fg.name}」在线物化滞后",
-                         detail=f"fg_id={fg.id};水位落后 {lag_hours} 小时(阈值 {lag_threshold})",
-                         workflow_id=fg.workflow_id, webhook=False)
         fg_out.append({"id": fg.id, "name": fg.name, "version": fg.version,
                        "online_enabled": fg.online_enabled,
                        "last_produced_at": (fg.last_produced_at.isoformat()
                                             if fg.last_produced_at else None),
                        "lag_hours": lag_hours})
-    db.commit()  # 落滞后告警
     return {"today": {"success": _count("success"), "failed": _count("failed"),
                       "running": _count("running")},
             "recent_failures": failures,

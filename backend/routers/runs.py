@@ -118,6 +118,9 @@ def backfill(wid: int, body: BackfillIn, db=Depends(get_db),
     # 审计先于创建循环(同首个 create_run 事务提交):中途失败时审计计数可能多于实际创建数,
     # 有意取舍——审计语义为"发起了 x N 的补数请求"而非"成功创建 N 个实例"。
     record(db, user, "backfill", f"{start}~{end} x{len(pairs)}", project_id=pid)
+    if not pairs:
+        db.commit()  # 空区间也落审计
+        return {"created": 0}
     created = 0
     for a, b in pairs:
         dup = db.scalar(select(WorkflowRun.id).where(
@@ -127,8 +130,6 @@ def backfill(wid: int, body: BackfillIn, db=Depends(get_db),
             sched.create_run(db, wf, ver, "backfill", a, b,
                              triggered_by=user.id, parallel_degree=body.parallel)
             created += 1
-    if not pairs:
-        db.commit()
     db.commit()
     return {"created": created}
 

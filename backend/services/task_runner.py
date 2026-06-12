@@ -112,23 +112,36 @@ def _register_production(Session, workflow_id: int, task_key: str,
         for fg in fgs:
             fg.last_produced_at = datetime.utcnow()
             fg.last_produced_rows = rows
-            _record_quality(db, fg, rows)
+            _record_quality(db, fg, result_json)
         if fgs:
             db.commit()
 
 
-def _record_quality(db, fg, rows) -> None:
-    """写质量记录;与上一条对比,降幅超过阈值(默认 0.5)产生 quality_drop 告警。"""
+def _record_quality(db, fg, result_json) -> None:
+    """写质量记录;与上一条对比,降幅超过阈值(默认 0.5)产生 quality_drop 告警。
+    # 下推(warehouse)链路不搬数据,质量维度仅 rows(count_sql);distinct/null 适用本地 parquet 链路"""
     from sqlalchemy import select
 
     from ..models import QualityRecord
     from .alerts import emit
     from .notify import get_setting
 
+    distinct_keys = null_ratio = None
+    if result_json:
+        try:
+            parsed = json.loads(result_json)
+            rows = parsed.get("rows")
+            distinct_keys = parsed.get("distinct_keys")
+            null_ratio = parsed.get("null_ratio")
+        except (ValueError, AttributeError):
+            rows = None
+    else:
+        rows = None
     prev = db.scalar(select(QualityRecord)
                      .where(QualityRecord.feature_group_id == fg.id)
                      .order_by(QualityRecord.id.desc()).limit(1))
-    db.add(QualityRecord(feature_group_id=fg.id, rows=rows))
+    db.add(QualityRecord(feature_group_id=fg.id, rows=rows,
+                         distinct_keys=distinct_keys, null_ratio=null_ratio))
     if rows is None or prev is None or not prev.rows:
         return
     try:

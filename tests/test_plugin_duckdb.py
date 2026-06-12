@@ -50,3 +50,13 @@ def test_duckdb_sql_output_escape_rejected(tmp_path):
     fn = get_plugin("duckdb_sql")
     with pytest.raises(ValueError, match="越界"):
         fn({"sql": "select 1", "output_name": "../escape"}, CTX, _env(tmp_path))
+
+
+def test_duckdb_sql_quality_dims(tmp_path):
+    env = _env(tmp_path)
+    fn = get_plugin("duckdb_sql")
+    result = fn({"sql": "select 'C1' cust_no, 1 v union all select 'C1', null",
+                 "output_name": "q", "entity_keys": ["cust_no"]}, CTX, env)
+    assert result["rows"] == 2
+    assert result["distinct_keys"] == 1
+    assert abs(result["null_ratio"] - 0.25) < 1e-6  # 4 个格子 1 个 null

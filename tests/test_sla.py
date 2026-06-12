@@ -64,6 +64,21 @@ def test_sla_dedup_same_day(tmp_path):
         assert len(db.scalars(select(Alert).where(Alert.kind == "sla_miss")).all()) == 1
 
 
+def test_sla_dedup_correct_across_timezones(tmp_path):
+    """去重窗口按 UTC 锚点:上海时区下当天已有告警不重复产生(回归:曾因本地/UTC 混比导致每 tick 重复)。"""
+    from backend.models import Alert
+    Session, wf_id = _prep(tmp_path)
+    sched = Scheduler(Session, now_fn=lambda: utc(2026, 6, 11, 20))
+    sched.check_sla()
+    with Session() as db:
+        assert len(db.scalars(select(Alert).where(Alert.kind == "sla_miss")).all()) == 1
+    # 模拟同日稍后(上海 06-12 06:00 = UTC 06-11 22:00),绕过节流
+    sched2 = Scheduler(Session, now_fn=lambda: utc(2026, 6, 11, 22))
+    sched2.check_sla()
+    with Session() as db:
+        assert len(db.scalars(select(Alert).where(Alert.kind == "sla_miss")).all()) == 1
+
+
 def test_sla_throttled(tmp_path):
     """60s 节流:同一 Scheduler 实例短间隔重复调用直接跳过。"""
     Session, wf_id = _prep(tmp_path)

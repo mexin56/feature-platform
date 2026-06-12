@@ -14,12 +14,14 @@ TERMINAL_STATES = ("success", "failed", "upstream_failed", "skipped")
 
 class Scheduler:
     SLA_THROTTLE_SEC = 60
+    LAG_THROTTLE_SEC = 600
 
     def __init__(self, SessionLocal, settings=None, now_fn=None):
         self.SessionLocal = SessionLocal
         self.settings = settings
         self.now_fn = now_fn or (lambda: datetime.now(timezone.utc))
         self._last_sla_check: datetime | None = None
+        self._last_lag_check: datetime | None = None
 
     # ---- 时钟 ----
     def _now_utc(self) -> datetime:
@@ -218,9 +220,9 @@ class Scheduler:
                 if now_local < sla_today:
                     continue  # 今日 SLA 时刻未到
                 day_start = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
-                # NOTE: 使用 datetime.now(tz) 而非 utcnow(),避免夏令时/时区偏差导致 SLA 漏报
-                # 注意:SLA 去重以 Alert.created_at(naive UTC)与工作流本地 day_start 比较
-                # 存在时区偏差,部门级场景接受(同日判定误差最多数小时,只影响极端跨时区配置)
+                # 去重窗口换算回 UTC(Alert.created_at 为 naive UTC):
+                # now_utc - (now_local - day_start) = 本地今日零点对应的 UTC 时刻
+                day_start_utc = now - (now_local - day_start)
                 ok = db.scalar(select(WorkflowRun.id).where(
                     WorkflowRun.workflow_id == wf.id,
                     WorkflowRun.run_type == "scheduled",
@@ -230,7 +232,7 @@ class Scheduler:
                     continue
                 dup = db.scalar(select(Alert.id).where(
                     Alert.kind == "sla_miss", Alert.workflow_id == wf.id,
-                    Alert.created_at >= day_start).limit(1))
+                    Alert.created_at >= day_start_utc).limit(1))
                 if dup:
                     continue
                 emit(db, project_id=wf.project_id, level="error", kind="sla_miss",
@@ -239,9 +241,48 @@ class Scheduler:
                      workflow_id=wf.id)
             db.commit()
 
+    # ---- ⑤ 物化滞后检查(600s 节流;当天去重;webhook 推送) ----
+    def check_materialize_lag(self) -> None:
+        now = self._now_utc()
+        if (self._last_lag_check is not None
+                and (now - self._last_lag_check).total_seconds() < self.LAG_THROTTLE_SEC):
+            return
+        self._last_lag_check = now
+        from sqlalchemy import select as sa_select
+
+        from ..models import FeatureGroup
+        from .alerts import emit
+        from .notify import get_setting
+
+        with self.SessionLocal() as db:
+            try:
+                threshold = float(get_setting(db, "materialize_lag_hours", "24"))
+            except ValueError:
+                threshold = 24.0
+            day_start_utc = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            fgs = db.scalars(sa_select(FeatureGroup).where(
+                FeatureGroup.online_enabled.is_(True),
+                FeatureGroup.materialize_watermark.isnot(None))).all()
+            for fg in fgs:
+                lag_hours = (now - fg.materialize_watermark).total_seconds() / 3600
+                if lag_hours <= threshold:
+                    continue
+                dup = db.scalar(sa_select(Alert.id).where(
+                    Alert.kind == "materialize_lag",
+                    Alert.detail.like(f"fg_id={fg.id};%"),
+                    Alert.created_at >= day_start_utc).limit(1))
+                if dup:
+                    continue
+                emit(db, project_id=fg.project_id, level="warning", kind="materialize_lag",
+                     title=f"特征组「{fg.name}」在线物化滞后",
+                     detail=f"fg_id={fg.id};水位落后 {lag_hours:.1f} 小时(阈值 {threshold})",
+                     workflow_id=fg.workflow_id)  # webhook 默认开启;当天去重防刷屏
+            db.commit()
+
     # ---- tick 主循环 ----
     def tick(self) -> None:
         self.schedule_cron_runs()
         self.advance_runs()
         self.reap_orphans()
         self.check_sla()
+        self.check_materialize_lag()

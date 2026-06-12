@@ -82,12 +82,16 @@ def test_dashboard_materialize_lag(client, admin_headers):
         row = db.get(FeatureGroup, fg["id"])
         row.materialize_watermark = datetime.utcnow() - timedelta(hours=72)
         db.commit()
+    # dashboard 只读:lag_hours 正确显示,不产生告警
     d = client.get("/api/monitoring/dashboard", headers=h).json()
     lag = [x for x in d["feature_groups"] if x["id"] == fg["id"]][0]
     assert lag["lag_hours"] >= 71
-    # 滞后超过默认阈值(24h)→ 产生 materialize_lag 告警(当天去重)
+    # 告警由调度器产生(调度化)
+    client.app.state.scheduler.check_materialize_lag()
     alerts = client.get("/api/alerts", headers=h).json()
     assert any(a["kind"] == "materialize_lag" for a in alerts)
-    client.get("/api/monitoring/dashboard", headers=h)  # 再次访问不重复告警
+    # 当天去重:重置节流后再次调用,仍只有 1 条
+    client.app.state.scheduler._last_lag_check = None
+    client.app.state.scheduler.check_materialize_lag()
     alerts2 = client.get("/api/alerts", headers=h).json()
     assert len([a for a in alerts2 if a["kind"] == "materialize_lag"]) == 1

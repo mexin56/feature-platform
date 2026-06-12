@@ -11,6 +11,8 @@ def execute(params: dict, ctx: dict, env) -> dict:
     try:
         rows = con.sql(f"select count(*) from ({sql})").fetchone()[0]
         output = None
+        null_ratio = None
+        distinct_keys = None
         if params.get("output_name"):
             out_dir = (env.offline_dir / params["output_name"]).resolve()
             try:
@@ -21,6 +23,19 @@ def execute(params: dict, ctx: dict, env) -> dict:
             out_path = out_dir / f"{ctx['ds_nodash']}.parquet"
             con.sql(f"COPY ({sql}) TO '{out_path.as_posix()}' (FORMAT PARQUET)")
             output = str(out_path)
-        return {"rows": int(rows), "output": output}
+            # 质量维度:全列平均空值率;提供 entity_keys 参数时计算主键去重数
+            cols = [d[0] for d in con.sql(f"select * from ({sql}) limit 0").description]
+            if cols and rows:
+                null_exprs = " + ".join(
+                    f"sum(case when \"{c}\" is null then 1 else 0 end)" for c in cols)
+                total_nulls = con.sql(f"select {null_exprs} from ({sql})").fetchone()[0] or 0
+                null_ratio = round(total_nulls / (rows * len(cols)), 6)
+            ekeys = params.get("entity_keys")
+            if ekeys and rows:
+                key_expr = " || '|' || ".join(f'cast("{k}" as varchar)' for k in ekeys)
+                distinct_keys = con.sql(
+                    f"select count(distinct {key_expr}) from ({sql})").fetchone()[0]
+        return {"rows": int(rows), "output": output,
+                "null_ratio": null_ratio, "distinct_keys": distinct_keys}
     finally:
         con.close()
