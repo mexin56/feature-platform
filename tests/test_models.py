@@ -1,3 +1,4 @@
+import pytest
 from sqlalchemy.orm import sessionmaker
 
 from backend.db import Base, make_engine
@@ -28,3 +29,23 @@ def test_wal_mode(tmp_path):
     with engine.connect() as conn:
         mode = conn.exec_driver_sql("PRAGMA journal_mode").scalar()
     assert mode == "wal"
+
+
+def test_project_member_unique(tmp_path):
+    from sqlalchemy.exc import IntegrityError
+
+    engine = make_engine(tmp_path / "meta.db")
+    Base.metadata.create_all(engine)
+    Session = sessionmaker(bind=engine)
+    with Session() as db:
+        u = User(username="alice", password_hash="x", role="developer")
+        db.add(u)
+        db.flush()
+        p = Project(name="p1", description="", owner_id=u.id)
+        db.add(p)
+        db.flush()
+        db.add(ProjectMember(project_id=p.id, user_id=u.id))
+        db.commit()
+        db.add(ProjectMember(project_id=p.id, user_id=u.id))
+        with pytest.raises(IntegrityError):
+            db.commit()
