@@ -16,8 +16,6 @@ def _env(tmp_path):
 
 
 def test_unknown_plugin_raises():
-    with pytest.raises(PluginError, match="未实现"):
-        get_plugin("materialize")  # Phase 2 才实现
     with pytest.raises(PluginError, match="未知"):
         get_plugin("nonsense")
 
