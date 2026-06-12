@@ -13,6 +13,7 @@ import {
 } from '@ant-design/icons'
 import {
   Button,
+  Card,
   Dropdown,
   Form,
   Input,
@@ -49,7 +50,7 @@ const MENU = [
   { key: '/alerts', icon: <AlertOutlined />, label: '告警' },
 ]
 
-const ROLE_LABEL = { admin: '管理员', operator: '操作员', viewer: '只读' }
+const ROLE_LABEL = { admin: '管理员', developer: '开发者', viewer: '只读' }
 
 export default function App() {
   const [auth, setAuth] = useState({ state: 'loading' })
@@ -70,8 +71,16 @@ export default function App() {
         return
       }
       const me = await api.get('/api/auth/me')
+      const list = await api.get('/api/projects').catch(() => [])
+      const arr = list.items ?? list
+      setProjects(arr)
+      // 项目未选或已失效时自动选第一个,避免页面请求缺少 X-Project-Id
+      const cur = Number(localStorage.getItem('projectId'))
+      if (arr.length && !arr.some((p) => p.id === cur)) {
+        localStorage.setItem('projectId', String(arr[0].id))
+      }
+      if (!arr.length) localStorage.removeItem('projectId')
       setAuth({ state: 'ready', user: me.user ?? me })
-      api.get('/api/projects').then((r) => setProjects(r.items ?? r)).catch(() => {})
     } catch {
       setAuth({ state: 'login' })
     }
@@ -89,6 +98,56 @@ export default function App() {
 
   if (auth.state === 'login' || location.pathname === '/login') {
     return <Login onLogin={() => { boot() }} />
+  }
+
+  // 无任何可用项目:引导创建(项目级接口都需要 X-Project-Id,先建项目再进入)
+  if (projects.length === 0) {
+    const canCreate = auth.user?.role !== 'viewer'
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f5f7fa' }}>
+        <Card title="欢迎使用特征调度管理平台" style={{ width: 420 }}>
+          {canCreate ? (
+            <>
+              <Typography.Paragraph type="secondary">
+                还没有可用项目,先创建第一个项目开始使用:
+              </Typography.Paragraph>
+              <Form
+                layout="vertical"
+                onFinish={async (values) => {
+                  try {
+                    const p = await api.post('/api/projects', values)
+                    localStorage.setItem('projectId', String(p.id))
+                    message.success(`项目 "${p.name}" 已创建`)
+                    boot()
+                  } catch {
+                    // 错误已由 api.js 弹出
+                  }
+                }}
+              >
+                <Form.Item name="name" label="项目名称" rules={[{ required: true, message: '请输入项目名称' }]}>
+                  <Input placeholder="如:反欺诈特征" />
+                </Form.Item>
+                <Form.Item name="description" label="描述">
+                  <Input.TextArea rows={2} />
+                </Form.Item>
+                <Button type="primary" htmlType="submit" block>创建项目</Button>
+              </Form>
+            </>
+          ) : (
+            <Typography.Paragraph>
+              你还不是任何项目的成员,请联系管理员或项目负责人将你加入项目。
+            </Typography.Paragraph>
+          )}
+          <Button
+            type="link"
+            style={{ padding: 0, marginTop: 12 }}
+            onClick={() => { localStorage.removeItem('token'); localStorage.removeItem('projectId'); window.location.href = '/login' }}
+          >
+            退出登录
+          </Button>
+        </Card>
+      </div>
+    )
   }
 
   const selected =
@@ -174,13 +233,9 @@ export default function App() {
               size="small"
               style={{ flex: 1 }}
               value={localStorage.getItem('projectId') ? Number(localStorage.getItem('projectId')) : null}
-              options={[
-                { value: null, label: '全部项目' },
-                ...projects.map((p) => ({ value: p.id, label: p.name })),
-              ]}
+              options={projects.map((p) => ({ value: p.id, label: p.name }))}
               onChange={(v) => {
-                if (v) localStorage.setItem('projectId', String(v))
-                else localStorage.removeItem('projectId')
+                localStorage.setItem('projectId', String(v))
                 window.location.reload()
               }}
               placeholder="选择项目"
