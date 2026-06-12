@@ -85,7 +85,7 @@ def create_workflow(body: WorkflowIn, db=Depends(get_db),
     db.add(wf)
     db.flush()
     ver = WorkflowVersion(workflow_id=wf.id, version_no=1,
-                          dag_json=json.dumps(body.dag, ensure_ascii=False), created_by=user.id)
+                          dag_json=json.dumps(body.dag, ensure_ascii=False, sort_keys=True), created_by=user.id)
     db.add(ver)
     db.flush()
     wf.current_version_id = ver.id
@@ -114,7 +114,7 @@ def update_workflow(wid: int, body: WorkflowIn, db=Depends(get_db),
     wf.timezone, wf.catchup = body.timezone, body.catchup
     wf.concurrency_limit, wf.failure_policy = body.concurrency_limit, body.failure_policy
     cur = db.get(WorkflowVersion, wf.current_version_id)
-    new_dag = json.dumps(body.dag, ensure_ascii=False)
+    new_dag = json.dumps(body.dag, ensure_ascii=False, sort_keys=True)
     if cur is None or cur.dag_json != new_dag:
         next_no = (db.scalar(select(WorkflowVersion.version_no)
                              .where(WorkflowVersion.workflow_id == wid)

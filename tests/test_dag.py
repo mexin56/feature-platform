@@ -50,3 +50,12 @@ def test_cycle_rejected():
 def test_upstream_map():
     ups = upstream_map(_dag([N1, N2, N3], [["t1", "t3"], ["t2", "t3"]]))
     assert ups == {"t1": [], "t2": [], "t3": ["t1", "t2"]}
+
+
+def test_non_list_edge_rejected():
+    with pytest.raises(DagError, match="边"):
+        validate_dag(_dag([N1, N2], [{"0": "t1", "1": "t2"}]))
+
+
+def test_upstream_map_tolerates_empty_dag():
+    assert upstream_map({}) == {}

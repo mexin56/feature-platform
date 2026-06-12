@@ -23,7 +23,7 @@ def validate_dag(dag: dict) -> list[str]:
             raise DagError(f"节点 {n['key']} 类型非法: {n.get('type')}")
     key_set = set(keys)
     for e in edges:
-        if len(e) != 2 or e[0] not in key_set or e[1] not in key_set:
+        if not isinstance(e, (list, tuple)) or len(e) != 2 or e[0] not in key_set or e[1] not in key_set:
             raise DagError(f"边引用不存在的节点: {e}")
         if e[0] == e[1]:
             raise DagError(f"不允许自环: {e}")
@@ -48,7 +48,7 @@ def validate_dag(dag: dict) -> list[str]:
 
 def upstream_map(dag: dict) -> dict[str, list[str]]:
     """每个节点的直接上游 key 列表(调度器依赖推进用)。"""
-    ups: dict[str, list[str]] = {n["key"]: [] for n in dag["nodes"]}
+    ups: dict[str, list[str]] = {n["key"]: [] for n in dag.get("nodes") or []}
     for a, b in dag.get("edges") or []:
         ups[b].append(a)
     return ups

@@ -90,6 +90,7 @@ class Workflow(Base):
 
 class WorkflowVersion(Base):
     __tablename__ = "workflow_versions"
+    __table_args__ = (UniqueConstraint("workflow_id", "version_no", name="uq_wf_version"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     workflow_id: Mapped[int] = mapped_column(ForeignKey("workflows.id"), nullable=False)

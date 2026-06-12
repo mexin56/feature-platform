@@ -102,3 +102,12 @@ def test_cannot_clear_cron_while_online(client, admin_headers):
     # 下线后允许清除
     client.post(f"/api/workflows/{wid}/offline", headers=h)
     assert client.put(f"/api/workflows/{wid}", json={**WF, "cron": None}, headers=h).status_code == 200
+
+
+def test_key_order_does_not_bump_version(client, admin_headers):
+    h, _ = _mk_dev_with_project(client, admin_headers)
+    wid = client.post("/api/workflows", json=WF, headers=h).json()["id"]
+    node = DAG["nodes"][0]
+    reordered = {"edges": [], "nodes": [{k: node[k] for k in reversed(list(node))}]}
+    r = client.put(f"/api/workflows/{wid}", json={**WF, "dag": reordered}, headers=h)
+    assert r.json()["version_no"] == 1  # 语义相同,不应升版本

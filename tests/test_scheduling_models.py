@@ -65,3 +65,19 @@ def test_workflow_name_unique_per_project(tmp_path):
         db.add(Workflow(project_id=p.id, name="w"))
         with pytest.raises(IntegrityError):
             db.commit()
+
+
+def test_workflow_version_unique(tmp_path):
+    import pytest
+    from sqlalchemy.exc import IntegrityError
+
+    Session = _session(tmp_path)
+    with Session() as db:
+        wf = Workflow(project_id=None, name="w")
+        db.add(wf)
+        db.flush()
+        db.add(WorkflowVersion(workflow_id=wf.id, version_no=1, dag_json="{}"))
+        db.commit()
+        db.add(WorkflowVersion(workflow_id=wf.id, version_no=1, dag_json="{}"))
+        with pytest.raises(IntegrityError):
+            db.commit()
