@@ -65,15 +65,33 @@ def parse_index(text: str) -> list[tuple]:
 
 
 def _all_codes(client: httpx.Client) -> list[str]:
-    """全 A 股代码全集(带 sz/sh 前缀);来源:东方财富 push2 列表接口单次调用。"""
-    r = client.get(_CODES_URL)
-    r.raise_for_status()
-    items = ((r.json().get("data") or {}).get("diff")) or []
+    """全 A 股代码全集(带 sz/sh 前缀);东财 push2 单次调用,失败则 tushare stock_basic 兜底
+    (部分网络环境屏蔽 push2 全族域名)。"""
+    try:
+        r = client.get(_CODES_URL)
+        r.raise_for_status()
+        items = ((r.json().get("data") or {}).get("diff")) or []
+        out = []
+        for it in items:
+            code = str(it.get("f12") or "")
+            if len(code) == 6 and code.isdigit():
+                out.append(("sh" if it.get("f13") == 1 else "sz") + code)
+        if out:
+            return out
+    except Exception:  # noqa: BLE001  统一走兜底
+        pass
+    return _all_codes_tushare()
+
+
+def _all_codes_tushare() -> list[str]:
+    """兜底代码全集:tushare stock_basic(经专用网关,ts_code 形如 000001.SZ)。"""
+    from .tushare_client import get_pro
+
+    df = get_pro().stock_basic(list_status="L", fields="ts_code")
     out = []
-    for it in items:
-        code = str(it.get("f12") or "")
-        if len(code) == 6 and code.isdigit():
-            out.append(("sh" if it.get("f13") == 1 else "sz") + code)
+    for ts_code in df["ts_code"]:
+        code, mkt = str(ts_code).split(".")
+        out.append(mkt.lower() + code)
     return out
 
 
