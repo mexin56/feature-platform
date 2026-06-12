@@ -41,6 +41,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     from . import models  # noqa: F401  确保模型注册
 
     Base.metadata.create_all(engine)
+    from .db import ensure_column
+
+    ensure_column(engine, "workflow_runs", "parallel_degree", "INTEGER DEFAULT 1")
     _seed_admin(app.state.sessionmaker)
     return app
 

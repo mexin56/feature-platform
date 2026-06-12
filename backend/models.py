@@ -115,6 +115,7 @@ class WorkflowRun(Base):
     triggered_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    parallel_degree: Mapped[int] = mapped_column(Integer, default=1)  # 补数批次并发度
 
 
 class TaskInstance(Base):
