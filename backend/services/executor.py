@@ -50,7 +50,7 @@ class Executor:
     def poll(self) -> None:
         self._reap_processes()
         free = self.max_workers - len(self._procs)
-        for tid in self._claim_due(free if not self.sync else self.max_workers):
+        for tid in self._claim_due(free):
             if self.sync:
                 run_task(str(self.settings.db_path), tid, str(self.settings.storage_dir))
             else:
@@ -73,11 +73,15 @@ class Executor:
                 if ti is None:
                     done.append(tid)
                     continue
+                # 超时基准 started_at 由 _claim 在每次抢占时刷新,重试任务的超时时钟随之重置
                 timed_out = (ti.timeout_sec and ti.started_at
                              and now > ti.started_at + timedelta(seconds=ti.timeout_sec))
                 if proc.is_alive() and timed_out:
                     proc.terminate()
                     proc.join(timeout=5)
+                    if proc.is_alive():  # terminate 未生效(如卡在 C 扩展)→ 强杀
+                        proc.kill()
+                        proc.join(1)
                     if ti.state == "running":
                         ti.state = ("up_for_retry" if ti.try_number < ti.max_tries
                                     else "failed")
