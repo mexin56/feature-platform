@@ -4,6 +4,7 @@ import {
   BranchesOutlined,
   ConsoleSqlOutlined,
   DashboardOutlined,
+  DatabaseOutlined,
   KeyOutlined,
   LogoutOutlined,
   PlayCircleOutlined,
@@ -33,6 +34,7 @@ import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-
 
 import { api } from './api.js'
 import Admin from './pages/Admin.jsx'
+import DataCollect from './pages/DataCollect.jsx'
 import Alerts from './pages/Alerts.jsx'
 import Dashboard from './pages/Dashboard.jsx'
 import FeatureGroupDetail from './pages/FeatureGroupDetail.jsx'
@@ -50,6 +52,7 @@ const MENU = [
   { key: '/workflows', icon: <BranchesOutlined />, label: '工作流' },
   { key: '/runs', icon: <PlayCircleOutlined />, label: '实例' },
   { key: '/query', icon: <ConsoleSqlOutlined />, label: '数据查询' },
+  { key: '/datasets', icon: <DatabaseOutlined />, label: '数据采集' },
   { key: '/alerts', icon: <AlertOutlined />, label: '告警' },
 ]
 
@@ -289,6 +292,7 @@ export default function App() {
             <Route path="/runs" element={<Runs />} />
             <Route path="/runs/:id" element={<RunDetail />} />
             <Route path="/query" element={<QueryPage />} />
+            <Route path="/datasets" element={<DataCollect />} />
             <Route path="/alerts" element={<Alerts />} />
             {isAdmin && <Route path="/admin" element={<Admin />} />}
             <Route path="/login" element={<Navigate to="/" />} />
