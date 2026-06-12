@@ -10,8 +10,8 @@ const LEVEL_LABEL = { error: '严重', warning: '警告', info: '提示' }
 const KIND_LABEL = {
   run_failed: '运行失败',
   run_success: '运行成功',
-  sla_breach: 'SLA 超时',
-  lag_high: '物化滞后',
+  sla_miss: 'SLA 超时',
+  materialize_lag: '物化滞后',
   quality_drop: '质量下降',
 }
 
