@@ -1,6 +1,7 @@
 """DAG(节点+边 JSON)校验:key 唯一、类型合法、边引用存在、无环(Kahn)。"""
 
-TASK_TYPES = ("sql_pushdown", "duckdb_sql", "python_script", "materialize", "dependent")
+TASK_TYPES = ("sql_pushdown", "duckdb_sql", "python_script", "materialize", "dependent",
+              "data_collect")
 
 
 class DagError(ValueError):

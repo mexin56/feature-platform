@@ -15,6 +15,7 @@ class Settings:
         self.scripts_dir = self.storage_dir / "scripts"
         self.db_path = self.storage_dir / "meta.db"
         self.online_db_path = self.storage_dir / "online_store.db"
+        self.market_db = self.storage_dir / "market.duckdb"
         # 测试模式:不启动 tick 线程,由测试手动驱动调度循环(Phase 1b 使用)
         self.sync_scheduler = sync_scheduler
         self.max_workers = int(os.environ.get("FEATURE_PLATFORM_MAX_WORKERS", "4"))

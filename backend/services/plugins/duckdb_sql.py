@@ -1,5 +1,7 @@
 """duckdb_sql 插件:本地 DuckDB 执行 SQL;配置 output_name 时产出 Parquet 特征快照。
-SQL 可用 read_csv_auto/read_parquet 读本地文件;模板变量先渲染再执行。"""
+SQL 可用 read_csv_auto/read_parquet 读本地文件;模板变量先渲染再执行。
+market.duckdb 存在时只读挂载为 market 库,特征衍生可直接 select market.ods_xxx。"""
+from ..collectors.writer import attach_market
 from ..templating import render
 
 
@@ -9,6 +11,7 @@ def execute(params: dict, ctx: dict, env) -> dict:
     sql = render(params["sql"], ctx)
     con = duckdb.connect()
     try:
+        attach_market(con, env)
         rows = con.sql(f"select count(*) from ({sql})").fetchone()[0]
         output = None
         null_ratio = None

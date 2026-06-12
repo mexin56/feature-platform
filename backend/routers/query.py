@@ -13,6 +13,7 @@ from sqlalchemy import select
 
 from ..deps import get_current_user, get_db, get_project_id, get_settings
 from ..models import FeatureGroup
+from ..services.collectors.writer import attach_market
 
 router = APIRouter(tags=["query"])
 
@@ -88,6 +89,7 @@ def _query_duckdb(db, settings, pid, sql, limit):
     con = duckdb.connect()
     try:
         views = _register_views(con, db, settings, pid)
+        attach_market(con, settings)  # 行情库只读挂载,market.ods_xxx 可查
         cur = con.execute(sql)
         rows = cur.fetchmany(limit)
         cols = [c[0] for c in cur.description] if cur.description else []
@@ -134,7 +136,18 @@ def catalog(engine: str, connection_id: int | None = None, db: str | None = None
                 cols = con.execute(f'describe "{n}"').fetchall()
                 views.append({"name": n,
                               "columns": [{"name": c[0], "dtype": c[1]} for c in cols]})
-            return {"views": views}
+            market_tables = []
+            if attach_market(con, settings):
+                tbls = con.execute(
+                    "select table_name from information_schema.tables "
+                    "where table_catalog = 'market' and table_schema = 'main' "
+                    "order by table_name").fetchall()
+                for (t,) in tbls:
+                    cols = con.execute(f'describe market."{t}"').fetchall()
+                    market_tables.append(
+                        {"name": f"market.{t}",
+                         "columns": [{"name": c[0], "dtype": c[1]} for c in cols]})
+            return {"views": views, "market_tables": market_tables}
         finally:
             con.close()
     if engine == "connection":

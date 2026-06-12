@@ -29,6 +29,10 @@ def get_plugin(task_type: str):
         from .materialize import execute
 
         return execute
+    if task_type == "data_collect":
+        from .data_collect import execute
+
+        return execute
     if task_type in TASK_TYPES:
         raise PluginError(f"插件未实现(后续阶段提供): {task_type}")
     raise PluginError(f"未知任务类型: {task_type}")
