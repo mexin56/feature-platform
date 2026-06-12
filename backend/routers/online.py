@@ -5,7 +5,7 @@ import json
 from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, Header, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select, update
 
 from ..deps import get_db, get_project_id, get_settings
@@ -17,11 +17,11 @@ router = APIRouter(tags=["online"])
 
 class OnlineQueryIn(BaseModel):
     feature_group_id: int
-    keys: list[dict]
+    keys: list[dict] = Field(default_factory=list, max_length=500)
 
 
 class DebugQueryIn(BaseModel):
-    keys: list[dict]
+    keys: list[dict] = Field(default_factory=list, max_length=500)
 
 
 def _query_fg(db, settings, fg: FeatureGroup, keys: list[dict]) -> list[dict]:

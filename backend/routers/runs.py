@@ -115,6 +115,8 @@ def backfill(wid: int, body: BackfillIn, db=Depends(get_db),
         a = b
     start = body.start_date
     end = body.end_date
+    # 审计先于创建循环(同首个 create_run 事务提交):中途失败时审计计数可能多于实际创建数,
+    # 有意取舍——审计语义为"发起了 x N 的补数请求"而非"成功创建 N 个实例"。
     record(db, user, "backfill", f"{start}~{end} x{len(pairs)}", project_id=pid)
     created = 0
     for a, b in pairs:

@@ -96,3 +96,12 @@ def test_debug_endpoint_jwt(client, admin_headers):
     # 无 JWT 拒绝
     assert client.post(f"/api/feature-groups/{fgid}/online-debug",
                        json={"keys": []}).status_code == 401
+
+
+def test_batch_size_capped(client, admin_headers):
+    h, fgid = _mk_fg(client, admin_headers)
+    key = _mk_key(client, admin_headers)
+    r = client.post("/api/online-features", headers={"X-API-Key": key},
+                    json={"feature_group_id": fgid,
+                          "keys": [{"cust_no": str(i)} for i in range(501)]})
+    assert r.status_code == 422  # Pydantic 校验拒绝,防 SQLite 999 参数上限
