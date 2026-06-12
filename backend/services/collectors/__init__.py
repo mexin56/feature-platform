@@ -12,8 +12,9 @@ def register(ds: DataSet) -> None:
     CATALOG[ds.key] = ds
 
 
-# T2 起追加:sina/eastmoney/ths/cninfo/akshare_src/baostock_src/mootdx_src/tushare_src/qmt_src
-_COLLECTOR_MODULES = ("tencent",)
+_COLLECTOR_MODULES = ("tencent", "sina", "eastmoney", "ths", "cninfo",
+                      "akshare_src", "baostock_src", "mootdx_src",
+                      "tushare_src", "qmt_src")
 
 for _m in _COLLECTOR_MODULES:
     try:

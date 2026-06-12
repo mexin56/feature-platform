@@ -5,7 +5,8 @@ from datetime import datetime
 from pathlib import Path
 
 TABLE_RE = re.compile(r"^[a-z0-9_]+$")
-COL_RE = re.compile(r"^[A-Za-z0-9_]+$")
+# 列名放行汉字(akshare/东财等源的 DataFrame 列名为中文);引号包裹建表,无注入面
+COL_RE = re.compile(r"^[A-Za-z0-9_一-鿿]+$")
 # bool 须先于 int 判定(bool 是 int 子类)
 _TYPE_MAP = ((bool, "BOOLEAN"), (int, "BIGINT"), (float, "DOUBLE"), (str, "VARCHAR"))
 
