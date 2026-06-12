@@ -54,7 +54,7 @@ def test_catchup_true_backfills_all(tmp_path):
 
 
 def test_retick_no_duplicates_and_watermark_advances(tmp_path):
-    Session, wf_id = make_env(tmp_path, cron="0 2 * * *")
+    Session, wf_id = make_env(tmp_path, cron="0 2 * * *", concurrency_limit=10)
     with Session() as db:
         db.get(Workflow, wf_id).created_at = datetime(2026, 6, 9, 10, 0)
         db.commit()
