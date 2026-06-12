@@ -98,3 +98,67 @@ class Scheduler:
                 active_count += 1
             wf.last_scheduled_at = e
             db.commit()
+
+    # ---- ② 依赖推进与完结 ----
+    def advance_runs(self) -> None:
+        with self.SessionLocal() as db:
+            runs = db.scalars(select(WorkflowRun).where(WorkflowRun.state == "running")
+                              .order_by(WorkflowRun.workflow_id,
+                                        WorkflowRun.data_interval_start)).all()
+            gated = self._gate(db, runs)
+            for run in gated:
+                self._advance_one(db, run)
+            db.commit()
+
+    def _gate(self, db, runs: list) -> list:
+        """并发门控:scheduled/manual 按工作流 concurrency_limit;
+        backfill 按该批 parallel_degree;均按区间顺序放行前 K 个。"""
+        allowed: list = []
+        groups: dict = {}
+        for r in runs:
+            kind = "backfill" if r.run_type == "backfill" else "normal"
+            groups.setdefault((r.workflow_id, kind), []).append(r)
+        for (wf_id, kind), rs in groups.items():
+            if kind == "backfill":
+                cap = max(1, rs[0].parallel_degree)
+            else:
+                wf = db.get(Workflow, wf_id)
+                cap = max(1, wf.concurrency_limit if wf else 1)
+            allowed.extend(rs[:cap])
+        return allowed
+
+    def _advance_one(self, db, run: WorkflowRun) -> None:
+        from .dag import upstream_map
+
+        ver = db.get(WorkflowVersion, run.version_id)
+        assert ver is not None, f"实例 {run.id} 缺少版本快照"
+        dag = json.loads(ver.dag_json)
+        ups = upstream_map(dag)
+        tis = {t.task_key: t for t in db.scalars(
+            select(TaskInstance).where(TaskInstance.run_id == run.id)).all()}
+        now = self._now_utc()
+        wf = db.get(Workflow, run.workflow_id)
+        for key, ti in tis.items():
+            if ti.state == "none":
+                up = [tis[u].state for u in ups.get(key, []) if u in tis]
+                if any(s in ("failed", "upstream_failed") for s in up):
+                    ti.state = "upstream_failed"
+                elif any(s == "skipped" for s in up):
+                    ti.state = "skipped"
+                elif all(s == "success" for s in up):
+                    ti.state = "queued"
+            elif ti.state == "up_for_retry":
+                base = ti.finished_at or now
+                if now >= base + timedelta(seconds=ti.retry_delay_sec):
+                    ti.state = "queued"
+        # abort 策略:出现 failed 即跳过所有未开始/待重试任务
+        if wf and wf.failure_policy == "abort" and any(
+                t.state == "failed" for t in tis.values()):
+            for t in tis.values():
+                if t.state in ("none", "queued", "up_for_retry"):
+                    t.state = "skipped"
+        # 完结判定
+        if all(t.state in TERMINAL_STATES for t in tis.values()):
+            ok = all(t.state in ("success", "skipped") for t in tis.values())
+            run.state = "success" if ok else "failed"
+            run.finished_at = now
