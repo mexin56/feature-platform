@@ -96,8 +96,11 @@ export default function App() {
     )
   }
 
-  if (auth.state === 'login' || location.pathname === '/login') {
+  if (auth.state === 'login') {
     return <Login onLogin={() => { boot() }} />
+  }
+  if (location.pathname === '/login') {
+    return <Navigate to="/" replace />  // 已登录访问 /login:回首页(修复重新登录不跳转)
   }
 
   // 无任何可用项目:引导创建(项目级接口都需要 X-Project-Id,先建项目再进入)
