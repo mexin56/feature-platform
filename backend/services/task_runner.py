@@ -37,7 +37,10 @@ def run_task(db_path: str, ti_id: int, storage_dir: str) -> None:
             ctx = build_context(run.data_interval_start, run.data_interval_end)
             task_type, task_key, try_number, max_tries = (
                 ti.task_type, ti.task_key, ti.try_number, ti.max_tries)
+            timeout_sec = ti.timeout_sec
             run_workflow_id = run.workflow_id
+            if timeout_sec:
+                ctx["_timeout_sec"] = timeout_sec
 
         stop = threading.Event()
 

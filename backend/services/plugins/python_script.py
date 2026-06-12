@@ -18,8 +18,12 @@ def execute(params: dict, ctx: dict, env) -> dict:
                 "FP_DS": ctx["ds"], "FP_DS_NODASH": ctx["ds_nodash"],
                 "FP_DATA_INTERVAL_START": ctx["data_interval_start"],
                 "FP_DATA_INTERVAL_END": ctx["data_interval_end"]}
-    proc = subprocess.run([sys.executable, str(script)], env=env_vars,
-                          capture_output=True, text=True, encoding="utf-8", errors="replace")
+    try:
+        proc = subprocess.run([sys.executable, str(script)], env=env_vars,
+                              capture_output=True, text=True, encoding="utf-8", errors="replace",
+                              timeout=ctx.get("_timeout_sec"))
+    except subprocess.TimeoutExpired:
+        raise RuntimeError(f"脚本执行超时({ctx.get('_timeout_sec')}s)")
     if proc.stdout:
         print(proc.stdout, end="")
     if proc.stderr:

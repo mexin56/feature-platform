@@ -80,8 +80,8 @@ def trigger_run(wid: int, body: TriggerIn, db=Depends(get_db),
     else:
         now = datetime.utcnow().replace(microsecond=0)
         s = e = now
+    record(db, user, "trigger_run", f"wf_id={wid}", project_id=pid)
     run = sched.create_run(db, wf, ver, "manual", s, e, triggered_by=user.id)
-    record(db, user, "trigger_run", f"run_id={run.id}", project_id=pid)
     db.commit()
     return _run_out(run)
 
@@ -106,11 +106,18 @@ def backfill(wid: int, body: BackfillIn, db=Depends(get_db),
     sched = Scheduler(None)
     it = croniter(wf.cron, body.start_date - timedelta(microseconds=1))
     a = it.get_next(datetime)
-    created = 0
+    pairs = []
     while True:
         b = it.get_next(datetime)
         if b > body.end_date:
             break
+        pairs.append((a, b))
+        a = b
+    start = body.start_date
+    end = body.end_date
+    record(db, user, "backfill", f"{start}~{end} x{len(pairs)}", project_id=pid)
+    created = 0
+    for a, b in pairs:
         dup = db.scalar(select(WorkflowRun.id).where(
             WorkflowRun.workflow_id == wf.id, WorkflowRun.run_type == "backfill",
             WorkflowRun.data_interval_start == a).limit(1))
@@ -118,9 +125,8 @@ def backfill(wid: int, body: BackfillIn, db=Depends(get_db),
             sched.create_run(db, wf, ver, "backfill", a, b,
                              triggered_by=user.id, parallel_degree=body.parallel)
             created += 1
-        a = b
-    record(db, user, "backfill", f"{body.start_date}~{body.end_date} x{created}",
-           project_id=pid)
+    if not pairs:
+        db.commit()
     db.commit()
     return {"created": created}
 

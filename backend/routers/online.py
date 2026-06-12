@@ -10,7 +10,7 @@ from sqlalchemy import select, update
 
 from ..deps import get_db, get_project_id, get_settings
 from ..models import ApiKey, FeatureGroup
-from ..services.online_store import build_entity_key, query
+from ..services.online_store import build_entity_key, query_batch
 
 router = APIRouter(tags=["online"])
 
@@ -29,13 +29,22 @@ def _query_fg(db, settings, fg: FeatureGroup, keys: list[dict]) -> list[dict]:
         raise HTTPException(400, "该特征组未启用在线服务")
     entity_keys = json.loads(fg.entity_keys_json)
     now = datetime.utcnow()
-    results = []
+
+    # 先对全部 keys 计算 entity_key;build_entity_key 可能抛 ValueError → 400(首个失败 key)
+    ek_list = []
     for k in keys:
         try:
             ek = build_entity_key(k, entity_keys)
         except ValueError as e:
             raise HTTPException(400, str(e))
-        row = query(settings.online_db_path, fg.id, ek)
+        ek_list.append(ek)
+
+    # 一次 IN 批量查询
+    batch = query_batch(settings.online_db_path, fg.id, ek_list)
+
+    results = []
+    for k, ek in zip(keys, ek_list):
+        row = batch.get(ek)
         if row is None:
             results.append({"key": k, "values": None, "expired": False})
             continue

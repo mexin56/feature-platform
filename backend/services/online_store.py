@@ -83,3 +83,21 @@ def query(path, fg_id: int, entity_key: str) -> dict | None:
     if row is None:
         return None
     return {"payload": json.loads(row[0]), "event_time": row[1], "updated_at": row[2]}
+
+
+def query_batch(path, fg_id: int, entity_keys: list[str]) -> dict[str, dict]:
+    """批量点查:一次连接一次 IN 查询。返回 {entity_key: {payload, event_time, updated_at}}。"""
+    if not entity_keys:
+        return {}
+    ensure_schema(path)
+    con = _connect(path)
+    try:
+        marks = ",".join("?" * len(entity_keys))
+        rows = con.execute(
+            f"SELECT entity_key, payload, event_time, updated_at FROM online_features "
+            f"WHERE feature_group_id=? AND entity_key IN ({marks})",
+            (fg_id, *entity_keys)).fetchall()
+    finally:
+        con.close()
+    return {r[0]: {"payload": json.loads(r[1]), "event_time": r[2], "updated_at": r[3]}
+            for r in rows}
