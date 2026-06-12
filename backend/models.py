@@ -79,7 +79,7 @@ class Workflow(Base):
     cron: Mapped[str | None] = mapped_column(String(64), nullable=True)  # None=仅手工触发
     timezone: Mapped[str] = mapped_column(String(64), default="Asia/Shanghai")
     catchup: Mapped[bool] = mapped_column(Boolean, default=False)
-    concurrency_limit: Mapped[int] = mapped_column(Integer, default=1)  # 同流最大并行实例数
+    concurrency_limit: Mapped[int] = mapped_column(Integer, default=3)  # 同流最大并行实例数
     failure_policy: Mapped[str] = mapped_column(String(16), default="continue")  # continue/abort
     status: Mapped[str] = mapped_column(String(16), default="offline")  # online 才参与 cron 调度
     current_version_id: Mapped[int | None] = mapped_column(Integer, nullable=True)

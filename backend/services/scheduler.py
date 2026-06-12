@@ -4,7 +4,7 @@
 import json
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from ..models import TaskInstance, Workflow, WorkflowRun, WorkflowVersion
 
@@ -49,3 +49,52 @@ class Scheduler:
                 timeout_sec=n.get("timeout_sec")))
         db.commit()  # run 与全部 TI 一并提交,杜绝半创建状态
         return run
+
+    # ---- ① Cron 水位调度 ----
+    def schedule_cron_runs(self) -> None:
+        from croniter import croniter  # noqa: F401 (imported for availability check)
+
+        with self.SessionLocal() as db:
+            wfs = db.scalars(select(Workflow).where(
+                Workflow.status == "online", Workflow.cron.isnot(None))).all()
+            for wf in wfs:
+                self._schedule_one(db, wf)
+
+    def _schedule_one(self, db, wf: Workflow) -> None:
+        from croniter import croniter
+
+        now_local = self._now_local(wf.timezone)
+        # 锚点:水位(上次区间末)或 created_at 兜底;减 1 微秒使边界本身可被 get_next 取到
+        anchor = wf.last_scheduled_at or wf.created_at
+        it = croniter(wf.cron, anchor - timedelta(microseconds=1))
+        a = it.get_next(datetime)
+        pairs: list[tuple[datetime, datetime]] = []
+        while True:
+            b = it.get_next(datetime)
+            if b > now_local:
+                break
+            pairs.append((a, b))
+            a = b
+        if not pairs:
+            return
+        if not wf.catchup:
+            pairs = pairs[-1:]  # 只补最新完整区间,跳过的区间不再创建
+        active_count = db.scalar(
+            select(func.count()).select_from(WorkflowRun).where(
+                WorkflowRun.workflow_id == wf.id,
+                WorkflowRun.state == "running",
+                WorkflowRun.run_type.in_(("scheduled", "manual"))))
+        ver = db.get(WorkflowVersion, wf.current_version_id)
+        assert ver is not None, f"工作流 {wf.id} 缺少当前版本"
+        for s, e in pairs:
+            if active_count >= wf.concurrency_limit:
+                return  # 背压:不创建、不推水位,下个 tick 重试
+            dup = db.scalar(select(WorkflowRun.id).where(
+                WorkflowRun.workflow_id == wf.id,
+                WorkflowRun.run_type == "scheduled",
+                WorkflowRun.data_interval_start == s).limit(1))
+            if dup is None:
+                self.create_run(db, wf, ver, "scheduled", s, e)
+                active_count += 1
+            wf.last_scheduled_at = e
+            db.commit()
