@@ -42,13 +42,29 @@ def test_pushdown_executes_rendered_statements(tmp_path, monkeypatch):
     monkeypatch.setattr(sql_pushdown, "_exec_statements", fake_exec)
     fn = get_plugin("sql_pushdown")
     result = fn({"connection_id": cid,
-                 "sql": "insert overwrite t partition(dt='{{ ds }}') select 1; analyze table t"},
+                 "sql": ["insert overwrite t partition(dt='{{ ds }}') select 1",
+                         "analyze table t"]},
                 CTX, env)
     assert calls["conn_type"] == "spark"
     assert calls["password"] == "pw"  # 解密后传递
     assert calls["statements"] == [
         "insert overwrite t partition(dt='2026-06-11') select 1", "analyze table t"]
     assert result["rows"] is None  # 未配置 count_sql
+
+
+def test_pushdown_string_sql_not_split(tmp_path, monkeypatch):
+    env, cid = _env_with_conn(tmp_path)
+    calls = {}
+
+    def fake_exec(conn_type, host, port, username, password, database, statements):
+        calls["statements"] = statements
+
+    from backend.services.plugins import sql_pushdown
+
+    monkeypatch.setattr(sql_pushdown, "_exec_statements", fake_exec)
+    fn = get_plugin("sql_pushdown")
+    fn({"connection_id": cid, "sql": "select ';' as semi; -- 字面量分号不切分"}, CTX, env)
+    assert len(calls["statements"]) == 1
 
 
 def test_pushdown_count_and_min_guard(tmp_path, monkeypatch):

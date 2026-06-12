@@ -1,6 +1,8 @@
 """sql_pushdown 插件:渲染后的 SQL 下推到 Spark ThriftServer / MySQL 源端执行。
 params: {connection_id, sql, count_sql?, expect_rows_min?}
-分号分隔多语句逐条执行;count_sql 用于产出行数统计与下限校验(0 行防呆)。"""
+sql 可为字符串(整体作为一条语句执行)或字符串列表(逐条执行)。
+多语句请用列表显式声明,避免字符串字面量中分号被误切。
+count_sql 用于产出行数统计与下限校验(0 行防呆)。"""
 from ..templating import render
 
 
@@ -12,20 +14,33 @@ def _exec_statements(conn_type, host, port, username, password, database, statem
                                database=database or None, connect_timeout=10)
         try:
             with conn.cursor() as cur:
-                for s in statements:
-                    cur.execute(s)
+                for i, s in enumerate(statements):
+                    try:
+                        cur.execute(s)
+                    except Exception as e:
+                        raise RuntimeError(f"第 {i + 1} 条语句执行失败: {s[:200]}") from e
             conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
         finally:
             conn.close()
     elif conn_type == "spark":
+        # ThriftServer 内网常用 NONE/NOSASL 认证,暂不传 password;LDAP 场景后续按需支持
         from pyhive import hive
 
         conn = hive.connect(host=host, port=port, username=username or None,
                             database=database or "default")
         try:
             cur = conn.cursor()
-            for s in statements:
-                cur.execute(s)
+            try:
+                for i, s in enumerate(statements):
+                    try:
+                        cur.execute(s)
+                    except Exception as e:
+                        raise RuntimeError(f"第 {i + 1} 条语句执行失败: {s[:200]}") from e
+            finally:
+                cur.close()
         finally:
             conn.close()
     else:
@@ -41,18 +56,28 @@ def _exec_scalar(conn_type, host, port, username, password, database, sql):
         try:
             with conn.cursor() as cur:
                 cur.execute(sql)
-                return cur.fetchone()[0]
+                row = cur.fetchone()
+                if row is None:
+                    raise RuntimeError("count_sql 未返回任何行")
+                return row[0]
         finally:
             conn.close()
     elif conn_type == "spark":
+        # ThriftServer 内网常用 NONE/NOSASL 认证,暂不传 password;LDAP 场景后续按需支持
         from pyhive import hive
 
         conn = hive.connect(host=host, port=port, username=username or None,
                             database=database or "default")
         try:
             cur = conn.cursor()
-            cur.execute(sql)
-            return cur.fetchone()[0]
+            try:
+                cur.execute(sql)
+                row = cur.fetchone()
+                if row is None:
+                    raise RuntimeError("count_sql 未返回任何行")
+                return row[0]
+            finally:
+                cur.close()
         finally:
             conn.close()
     raise ValueError(f"不支持的连接类型: {conn_type}")
@@ -80,8 +105,8 @@ def _connection_info(params: dict, env) -> tuple:
 
 def execute(params: dict, ctx: dict, env) -> dict:
     info = _connection_info(params, env)
-    sql = render(params["sql"], ctx)
-    statements = [s.strip() for s in sql.split(";") if s.strip()]
+    raw = params["sql"]
+    statements = [render(s, ctx) for s in raw] if isinstance(raw, list) else [render(raw, ctx)]
     _exec_statements(*info, statements)
     rows = None
     if params.get("count_sql"):
