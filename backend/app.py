@@ -26,6 +26,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app.include_router(users_router.router, prefix="/api")
 
+    from .routers import projects as projects_router
+
+    app.include_router(projects_router.router, prefix="/api")
+
     from . import models  # noqa: F401  确保模型注册
 
     Base.metadata.create_all(engine)
