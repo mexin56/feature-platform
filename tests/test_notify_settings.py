@@ -1,3 +1,6 @@
+import threading
+import time
+
 from backend.services import notify
 
 
@@ -13,7 +16,7 @@ def test_send_webhook_posts_card(monkeypatch):
         return R()
 
     monkeypatch.setattr(notify.httpx, "post", fake_post)
-    notify.send_webhook("https://hook", "标题", "正文内容")
+    notify._post_card("https://hook", "标题", "正文内容")
     assert sent["url"] == "https://hook"
     assert "标题" in str(sent["json"])
 
@@ -23,11 +26,25 @@ def test_send_webhook_swallows_errors(monkeypatch):
         raise OSError("network down")
 
     monkeypatch.setattr(notify.httpx, "post", boom)
-    notify.send_webhook("https://hook", "t", "d")  # 不应抛异常
+    notify._post_card("https://hook", "t", "d")  # 不应抛异常
 
 
 def test_send_webhook_noop_without_url():
     notify.send_webhook("", "t", "d")  # 空 URL 直接返回
+
+
+def test_send_webhook_async_nonblocking(monkeypatch):
+    done = threading.Event()
+
+    def slow_post(url, json=None, timeout=None):
+        time.sleep(0.5)
+        done.set()
+
+    monkeypatch.setattr(notify.httpx, "post", slow_post)
+    t0 = time.monotonic()
+    notify.send_webhook("https://hook", "t", "d")
+    assert time.monotonic() - t0 < 0.3  # 立即返回,不等待发送
+    assert done.wait(3)  # 后台线程最终执行
 
 
 def test_settings_api_admin_only(client, admin_headers):

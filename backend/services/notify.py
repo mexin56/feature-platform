@@ -1,12 +1,18 @@
 """Webhook 通知:飞书机器人卡片格式。发送失败只记日志,绝不影响主流程。"""
+import threading
 import traceback
 
 import httpx
 
 
 def send_webhook(url: str, title: str, text: str) -> None:
+    """异步发送(守护线程发后即忘):调度 tick 内调用不被慢网络阻塞。"""
     if not url:
         return
+    threading.Thread(target=_post_card, args=(url, title, text), daemon=True).start()
+
+
+def _post_card(url: str, title: str, text: str) -> None:
     payload = {
         "msg_type": "interactive",
         "card": {
