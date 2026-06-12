@@ -34,6 +34,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app.include_router(connections_router.router, prefix="/api")
 
+    from .routers import workflows as workflows_router
+
+    app.include_router(workflows_router.router, prefix="/api")
+
     from . import models  # noqa: F401  确保模型注册
 
     Base.metadata.create_all(engine)
