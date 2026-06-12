@@ -1,10 +1,12 @@
-"""Runs API: 手工触发 / 按区间补数 / 列表 / 详情。
+"""Runs API: 手工触发 / 按区间补数 / 列表 / 详情 / 运维操作。
 项目隔离:所有端点通过 get_project_id 确认调用方与工作流同属一个项目。
-审计:trigger_run / backfill 写 audit_logs(调用方 commit)。"""
+审计:trigger_run / backfill / stop_run / retry_run / mark_success 写 audit_logs。"""
 import json
 from datetime import datetime, timedelta
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel
 from sqlalchemy import select
 
@@ -144,3 +146,69 @@ def run_detail(rid: int, db=Depends(get_db), pid=Depends(get_project_id)):
                      "finished_at": t.finished_at.isoformat() if t.finished_at else None}
                     for t in tis]
     return out
+
+
+@router.post("/runs/{rid}/stop")
+def stop_run(rid: int, db=Depends(get_db), user=Depends(get_current_user),
+             pid=Depends(get_project_id)):
+    run = _run_in_project(db, rid, pid)
+    if run.state != "running":
+        raise HTTPException(400, "仅运行中的实例可终止")
+    run.state = "stopped"
+    run.finished_at = datetime.utcnow()
+    for t in db.scalars(select(TaskInstance).where(TaskInstance.run_id == rid)):
+        if t.state in ("none", "queued", "up_for_retry"):
+            t.state = "skipped"
+        # running 的任务由执行器回收时发现 run 已停止并强杀(executor._reap_processes)
+    record(db, user, "stop_run", f"run_id={rid}", project_id=pid)
+    db.commit()
+    return {"ok": True}
+
+
+@router.post("/runs/{rid}/retry")
+def retry_run(rid: int, db=Depends(get_db), user=Depends(get_current_user),
+              pid=Depends(get_project_id)):
+    run = _run_in_project(db, rid, pid)
+    if run.state not in ("failed", "stopped"):
+        raise HTTPException(400, "仅失败或已终止的实例可重跑")
+    for t in db.scalars(select(TaskInstance).where(TaskInstance.run_id == rid)):
+        if t.state != "success":  # 失败点续跑:成功任务保留
+            t.state = "none"
+            t.try_number = 0
+            t.finished_at = None
+            t.result_json = None
+    run.state = "running"
+    run.finished_at = None
+    record(db, user, "retry_run", f"run_id={rid}", project_id=pid)
+    db.commit()
+    return {"ok": True}
+
+
+@router.post("/tasks/{tid}/mark-success")
+def mark_success(tid: int, db=Depends(get_db), user=Depends(get_current_user),
+                 pid=Depends(get_project_id)):
+    ti = db.get(TaskInstance, tid)
+    if ti is None:
+        raise HTTPException(404, "任务实例不存在")
+    run = _run_in_project(db, ti.run_id, pid)
+    if ti.state == "running":
+        raise HTTPException(400, "运行中的任务不能置成功,请先终止实例")
+    ti.state = "success"
+    ti.finished_at = datetime.utcnow()
+    if run.state in ("failed", "stopped"):
+        run.state = "running"  # 复活实例让调度器重新判定后续
+        run.finished_at = None
+    record(db, user, "mark_success", f"task_id={tid}", project_id=pid)
+    db.commit()
+    return {"ok": True}
+
+
+@router.get("/tasks/{tid}/log")
+def task_log(tid: int, db=Depends(get_db), pid=Depends(get_project_id)):
+    ti = db.get(TaskInstance, tid)
+    if ti is None:
+        raise HTTPException(404, "任务实例不存在")
+    _run_in_project(db, ti.run_id, pid)
+    if not ti.log_path or not Path(ti.log_path).exists():
+        raise HTTPException(404, "日志不存在")
+    return PlainTextResponse(Path(ti.log_path).read_text(encoding="utf-8"))

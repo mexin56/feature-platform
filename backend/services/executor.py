@@ -73,6 +73,16 @@ class Executor:
                 if ti is None:
                     done.append(tid)
                     continue
+                run = db.get(WorkflowRun, ti.run_id)
+                if proc.is_alive() and run is not None and run.state == "stopped":
+                    proc.terminate()
+                    proc.join(timeout=5)
+                    if ti.state == "running":
+                        ti.state = "failed"
+                        ti.finished_at = now
+                        ti.result_json = '{"error": "实例已终止,任务被强杀"}'
+                    done.append(tid)
+                    continue
                 # 超时基准 started_at 由 _claim 在每次抢占时刷新,重试任务的超时时钟随之重置
                 timed_out = (ti.timeout_sec and ti.started_at
                              and now > ti.started_at + timedelta(seconds=ti.timeout_sec))
