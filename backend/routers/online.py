@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from ..deps import get_db, get_project_id, get_settings
 from ..models import ApiKey, FeatureGroup
@@ -42,6 +42,7 @@ def _query_fg(db, settings, fg: FeatureGroup, keys: list[dict]) -> list[dict]:
         expired = False
         if fg.ttl_days and row["event_time"]:
             et = _parse_dt(row["event_time"])
+            # TTL 边界:严格小于——event_time 恰好等于 now-ttl 视为未过期(对调用方更宽容)
             if et is not None and et < now - timedelta(days=fg.ttl_days):
                 expired = True
         results.append({"key": k, "values": None if expired else row["payload"],
@@ -73,7 +74,7 @@ def online_features(body: OnlineQueryIn, db=Depends(get_db), settings=Depends(ge
     if fg is None:
         raise HTTPException(404, "特征组不存在")
     results = _query_fg(db, settings, fg, body.keys)
-    ak.calls += 1
+    db.execute(update(ApiKey).where(ApiKey.id == ak.id).values(calls=ApiKey.calls + 1))
     db.commit()
     return {"feature_group": fg.name, "version": fg.version, "results": results}
 
