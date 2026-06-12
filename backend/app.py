@@ -18,6 +18,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def health():
         return {"status": "ok"}
 
+    from .routers import auth as auth_router
+
+    app.include_router(auth_router.router, prefix="/api")
+
     from . import models  # noqa: F401  确保模型注册
 
     Base.metadata.create_all(engine)
