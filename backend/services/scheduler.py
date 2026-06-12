@@ -129,6 +129,9 @@ class Scheduler:
         return allowed
 
     def _advance_one(self, db, run: WorkflowRun) -> None:
+        db.refresh(run)
+        if run.state != "running":  # 期间被 stop 等外部操作改写 → 本 tick 不再推进
+            return
         from .dag import upstream_map
 
         ver = db.get(WorkflowVersion, run.version_id)
@@ -170,10 +173,18 @@ class Scheduler:
         with self.SessionLocal() as db:
             now = self._now_utc()
             deadline = now - timedelta(seconds=HEARTBEAT_TIMEOUT_SEC)
+            from sqlalchemy import and_, or_
+
             orphans = db.scalars(select(TaskInstance).where(
                 TaskInstance.state == "running",
-                TaskInstance.heartbeat_at.isnot(None),
-                TaskInstance.heartbeat_at < deadline)).all()
+                or_(
+                    and_(TaskInstance.heartbeat_at.isnot(None),
+                         TaskInstance.heartbeat_at < deadline),
+                    # 心跳从未写入(子进程在首跳前死亡)→ 按抢占时间兜底
+                    and_(TaskInstance.heartbeat_at.is_(None),
+                         TaskInstance.started_at.isnot(None),
+                         TaskInstance.started_at < deadline),
+                ))).all()
             for ti in orphans:
                 ti.state = "up_for_retry" if ti.try_number < ti.max_tries else "failed"
                 ti.finished_at = now  # 重试延迟基准

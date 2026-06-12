@@ -171,7 +171,10 @@ def retry_run(rid: int, db=Depends(get_db), user=Depends(get_current_user),
     run = _run_in_project(db, rid, pid)
     if run.state not in ("failed", "stopped"):
         raise HTTPException(400, "仅失败或已终止的实例可重跑")
-    for t in db.scalars(select(TaskInstance).where(TaskInstance.run_id == rid)):
+    tis = db.scalars(select(TaskInstance).where(TaskInstance.run_id == rid)).all()
+    if any(t.state == "running" for t in tis):
+        raise HTTPException(400, "存在仍在运行的任务,请等待执行器回收后再重跑")
+    for t in tis:
         if t.state != "success":  # 失败点续跑:成功任务保留
             t.state = "none"
             t.try_number = 0

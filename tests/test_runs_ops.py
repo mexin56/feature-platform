@@ -83,3 +83,18 @@ def test_audit_for_ops(client, admin_headers):
     actions = [a["action"] for a in
                client.get(f"/api/projects/{pid}/audit", headers=h).json()]
     assert "trigger_run" in actions and "stop_run" in actions
+
+
+def test_retry_rejected_while_task_still_running(client, admin_headers):
+    h, pid, wid = _mk_workspace(client, admin_headers)
+    rid = client.post(f"/api/workflows/{wid}/trigger", json={}, headers=h).json()["id"]
+    client.post(f"/api/runs/{rid}/stop", headers=h)
+    # 模拟:停止时仍有任务在运行(执行器尚未完成强杀)
+    from backend.models import TaskInstance
+    from sqlalchemy import select
+
+    with client.app.state.sessionmaker() as db:
+        ti = db.scalar(select(TaskInstance).where(TaskInstance.run_id == rid))
+        ti.state = "running"
+        db.commit()
+    assert client.post(f"/api/runs/{rid}/retry", headers=h).status_code == 400

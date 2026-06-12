@@ -75,3 +75,15 @@ def test_tick_runs_all_phases(tmp_path):
     with Session() as db:
         assert db.scalar(select(TaskInstance).where(
             TaskInstance.state == "queued")) is not None
+
+
+def test_orphan_null_heartbeat_reaped_by_started_at(tmp_path):
+    """子进程在写首次心跳前死亡:heartbeat_at=NULL,按 started_at 兜底回收。"""
+    Session, wf_id = make_env(tmp_path)
+    sched = Scheduler(Session, now_fn=lambda: utc(2026, 6, 12, 12))
+    rid = _mk_run(Session, sched, wf_id)
+    stale = datetime(2026, 6, 12, 11, 0)
+    _force(Session, rid, "t1", state="running", try_number=1,
+           heartbeat_at=None, started_at=stale)
+    sched.reap_orphans()
+    assert _states(Session, rid)["t1"] == "up_for_retry"
