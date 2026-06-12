@@ -109,5 +109,31 @@ def _register_production(Session, workflow_id: int, task_key: str,
         for fg in fgs:
             fg.last_produced_at = datetime.utcnow()
             fg.last_produced_rows = rows
+            _record_quality(db, fg, rows)
         if fgs:
             db.commit()
+
+
+def _record_quality(db, fg, rows) -> None:
+    """写质量记录;与上一条对比,降幅超过阈值(默认 0.5)产生 quality_drop 告警。"""
+    from sqlalchemy import select
+
+    from ..models import QualityRecord
+    from .alerts import emit
+    from .notify import get_setting
+
+    prev = db.scalar(select(QualityRecord)
+                     .where(QualityRecord.feature_group_id == fg.id)
+                     .order_by(QualityRecord.id.desc()).limit(1))
+    db.add(QualityRecord(feature_group_id=fg.id, rows=rows))
+    if rows is None or prev is None or not prev.rows:
+        return
+    try:
+        threshold = float(get_setting(db, "quality_drop_ratio", "0.5"))
+    except ValueError:
+        threshold = 0.5
+    if rows < prev.rows * (1 - threshold):
+        emit(db, project_id=fg.project_id, level="warning", kind="quality_drop",
+             title=f"特征组「{fg.name}」产出行数突降",
+             detail=f"本次 {rows} 行,上次 {prev.rows} 行,降幅超过 {threshold:.0%}",
+             workflow_id=fg.workflow_id)

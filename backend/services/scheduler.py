@@ -167,6 +167,10 @@ class Scheduler:
             ok = all(t.state in ("success", "skipped") for t in tis.values())
             run.state = "success" if ok else "failed"
             run.finished_at = now
+            from .alerts import on_run_finished
+
+            if wf is not None:
+                on_run_finished(db, wf, run)
 
     # ---- ③ 孤儿清理 ----
     def reap_orphans(self) -> None:
