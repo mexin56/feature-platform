@@ -58,6 +58,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app.include_router(settings_router.router, prefix="/api")
 
+    from .routers import monitoring as monitoring_router
+
+    app.include_router(monitoring_router.router, prefix="/api")
+
     from . import models  # noqa: F401  确保模型注册
 
     Base.metadata.create_all(engine)
