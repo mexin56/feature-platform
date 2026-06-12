@@ -70,6 +70,8 @@ def online_features(body: OnlineQueryIn, db=Depends(get_db), settings=Depends(ge
                                         ApiKey.is_active.is_(True)))
     if ak is None:
         raise HTTPException(401, "API Key 无效或已禁用")
+    # 设计口径:API Key 由管理员签发、全局有效——线上决策系统不属于任何"项目",
+    # 跨项目读取在线特征是预期行为(与 online-debug 的项目隔离不同,后者面向平台用户)。
     fg = db.get(FeatureGroup, body.feature_group_id)
     if fg is None:
         raise HTTPException(404, "特征组不存在")

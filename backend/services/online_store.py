@@ -5,6 +5,8 @@ import sqlite3
 from datetime import datetime
 from pathlib import Path
 
+_schema_ensured: set[str] = set()
+
 
 def _connect(path) -> sqlite3.Connection:
     con = sqlite3.connect(str(path), timeout=30)
@@ -14,6 +16,8 @@ def _connect(path) -> sqlite3.Connection:
 
 
 def ensure_schema(path) -> None:
+    if str(path) in _schema_ensured:
+        return
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     con = _connect(path)
     try:
@@ -29,6 +33,7 @@ def ensure_schema(path) -> None:
         con.commit()
     finally:
         con.close()
+    _schema_ensured.add(str(path))
 
 
 def build_entity_key(row: dict, entity_keys: list[str]) -> str:

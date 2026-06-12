@@ -112,7 +112,7 @@ def _load_rows(params: dict, env, kind: str, location: str,
         info = _connection_info(params, env)
         sql = f"select * from {location}"
         if et_col and wm_str:
-            sql += f" where {et_col} > '{wm_str}'"
+            sql += f" where `{et_col}` > '{wm_str}'"
         cols, tuples = _fetch_rows(info, sql)
         return [dict(zip(cols, r)) for r in tuples]
     raise ValueError(f"未知离线落地类型: {kind}")
