@@ -164,3 +164,23 @@ class Scheduler:
             ok = all(t.state in ("success", "skipped") for t in tis.values())
             run.state = "success" if ok else "failed"
             run.finished_at = now
+
+    # ---- ③ 孤儿清理 ----
+    def reap_orphans(self) -> None:
+        with self.SessionLocal() as db:
+            now = self._now_utc()
+            deadline = now - timedelta(seconds=HEARTBEAT_TIMEOUT_SEC)
+            orphans = db.scalars(select(TaskInstance).where(
+                TaskInstance.state == "running",
+                TaskInstance.heartbeat_at.isnot(None),
+                TaskInstance.heartbeat_at < deadline)).all()
+            for ti in orphans:
+                ti.state = "up_for_retry" if ti.try_number < ti.max_tries else "failed"
+                ti.finished_at = now  # 重试延迟基准
+            db.commit()
+
+    # ---- tick 主循环 ----
+    def tick(self) -> None:
+        self.schedule_cron_runs()
+        self.advance_runs()
+        self.reap_orphans()
