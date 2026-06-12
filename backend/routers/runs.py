@@ -151,6 +151,7 @@ def run_detail(rid: int, db=Depends(get_db), pid=Depends(get_project_id)):
 @router.post("/runs/{rid}/stop")
 def stop_run(rid: int, db=Depends(get_db), user=Depends(get_current_user),
              pid=Depends(get_project_id)):
+    # 终止操作不产生告警推送(操作者本人在场);仅 failed/success 走 on_run_finished
     run = _run_in_project(db, rid, pid)
     if run.state != "running":
         raise HTTPException(400, "仅运行中的实例可终止")

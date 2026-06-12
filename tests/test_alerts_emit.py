@@ -98,3 +98,34 @@ def test_quality_record_written_and_drop_alert(tmp_path):
         qs = db.scalars(select(QualityRecord)).all()
     assert len(qs) == 2
     assert a is not None and "g" in a.title
+
+
+def test_quality_drop_pushes_sync_in_child(tmp_path, monkeypatch):
+    """质量突变推送走同步通道(_post_card),不依赖守护线程。"""
+    posted = []
+    from backend.services import notify, task_runner
+
+    monkeypatch.setattr(notify, "_post_card", lambda url, t, d: posted.append(t))
+    Session, wf_id, fgid = _bound_fg_and_success_t1(tmp_path)
+    from backend.models import SystemSetting
+
+    with Session() as db:
+        db.add(SystemSetting(key="webhook_url", value="https://hook"))
+        db.commit()
+    sched = Scheduler(Session, now_fn=lambda: utc(2026, 6, 12))
+    rid1 = _mk_run(Session, sched, wf_id)
+    with Session() as db:
+        ti = db.scalar(select(TaskInstance).where(
+            TaskInstance.run_id == rid1, TaskInstance.task_key == "t1"))
+        ti.params_json = json.dumps({"sql": "select 1 union all select 2 union all select 3"})
+        db.commit()
+    _exec_t1(Session, sched, tmp_path, wf_id, rid1)
+    rid2 = _mk_run(Session, sched, wf_id,
+                   interval=(datetime(2026, 6, 12), datetime(2026, 6, 13)))
+    with Session() as db:
+        ti = db.scalar(select(TaskInstance).where(
+            TaskInstance.run_id == rid2, TaskInstance.task_key == "t1"))
+        ti.params_json = json.dumps({"sql": "select 1"})
+        db.commit()
+    _exec_t1(Session, sched, tmp_path, wf_id, rid2)
+    assert any("突降" in t for t in posted)

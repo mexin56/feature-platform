@@ -11,6 +11,7 @@ def _send(db, title: str, text: str) -> None:
 
 def emit(db, *, project_id, level, kind, title, detail="",
          workflow_id=None, run_id=None, webhook=True) -> None:
+    """注意:webhook 在 commit 之前触发——通知先于落库,commit 失败时可能出现"有推送无站内记录"(仅通知层面,可接受)。"""
     db.add(Alert(project_id=project_id, level=level, kind=kind, title=title,
                  detail=detail, workflow_id=workflow_id, run_id=run_id))
     if webhook:

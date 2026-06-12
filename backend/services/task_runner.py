@@ -129,11 +129,18 @@ def _record_quality(db, fg, rows) -> None:
     if rows is None or prev is None or not prev.rows:
         return
     try:
+        # 防护管理员存入非数字(缺键时 get_setting 已返回 "0.5")
         threshold = float(get_setting(db, "quality_drop_ratio", "0.5"))
     except ValueError:
         threshold = 0.5
     if rows < prev.rows * (1 - threshold):
+        title = f"特征组「{fg.name}」产出行数突降"
+        detail = f"本次 {rows} 行,上次 {prev.rows} 行,降幅超过 {threshold:.0%}"
         emit(db, project_id=fg.project_id, level="warning", kind="quality_drop",
-             title=f"特征组「{fg.name}」产出行数突降",
-             detail=f"本次 {rows} 行,上次 {prev.rows} 行,降幅超过 {threshold:.0%}",
-             workflow_id=fg.workflow_id)
+             title=title, detail=detail, workflow_id=fg.workflow_id, webhook=False)
+        # 子进程上下文:守护线程发送会随进程退出丢失,这里同步发送(阻塞无害,非调度 tick)
+        url = get_setting(db, "webhook_url")
+        if url:
+            from .notify import _post_card
+
+            _post_card(url, title, detail)
