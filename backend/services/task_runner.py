@@ -7,7 +7,6 @@ import threading
 import traceback
 from datetime import datetime
 
-from sqlalchemy import select
 from sqlalchemy.orm import sessionmaker
 
 HEARTBEAT_INTERVAL_SEC = 15
@@ -69,10 +68,12 @@ def run_task(db_path: str, ti_id: int, storage_dir: str) -> None:
     stop.set()
 
     with Session() as db:
-        ti = db.get(TaskInstance, ti_id)
-        if ti.state == "running":  # 可能已被 stop/孤儿清理改写,不覆盖
-            ti.state = state
-            ti.result_json = result_json
-            ti.finished_at = datetime.utcnow()
-            db.commit()
+        from sqlalchemy import update
+
+        # 原子终态写入:仅当仍为 running 时生效(stop/孤儿清理改写过则不覆盖)
+        db.execute(update(TaskInstance)
+                   .where(TaskInstance.id == ti_id, TaskInstance.state == "running")
+                   .values(state=state, result_json=result_json,
+                           finished_at=datetime.utcnow()))
+        db.commit()
     engine.dispose()
