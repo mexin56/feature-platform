@@ -139,3 +139,53 @@ class TaskInstance(Base):
     result_json: Mapped[str | None] = mapped_column(Text, nullable=True)  # 插件产出(如行数)
     started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class FeatureGroup(Base):
+    """特征组:特征管理核心单元。绑定产出任务(workflow_id+task_key),生产即注册。
+    schema(特征清单)变更升版本:同 (project,name) 下新行 version+1,旧版本并存。"""
+
+    __tablename__ = "feature_groups"
+    __table_args__ = (UniqueConstraint("project_id", "name", "version", name="uq_fg"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    project_id: Mapped[int | None] = mapped_column(ForeignKey("projects.id"), nullable=True)
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    description: Mapped[str] = mapped_column(Text, default="")
+    entity_keys_json: Mapped[str] = mapped_column(Text, nullable=False)  # 主键列名 JSON 数组
+    event_time_col: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    ttl_days: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 在线 TTL
+    online_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    offline_kind: Mapped[str] = mapped_column(String(16), nullable=False)  # parquet/warehouse
+    offline_location: Mapped[str] = mapped_column(String(255), nullable=False)  # 目录名或库表名
+    owner_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    workflow_id: Mapped[int | None] = mapped_column(ForeignKey("workflows.id"), nullable=True)
+    task_key: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    last_produced_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_produced_rows: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    materialize_watermark: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class Feature(Base):
+    __tablename__ = "features"
+    __table_args__ = (UniqueConstraint("feature_group_id", "name", name="uq_feature"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    feature_group_id: Mapped[int] = mapped_column(ForeignKey("feature_groups.id"), nullable=False)
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    dtype: Mapped[str] = mapped_column(String(32), default="double")
+    description: Mapped[str] = mapped_column(Text, default="")  # 业务口径,审计留痕
+
+
+class LineageEdge(Base):
+    """血缘边:节点用 '类型:标识' 字符串(table:dw.x / feature_group:3 / workflow:5)。"""
+
+    __tablename__ = "lineage_edges"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    project_id: Mapped[int | None] = mapped_column(ForeignKey("projects.id"), nullable=True)
+    src: Mapped[str] = mapped_column(String(255), nullable=False)
+    dst: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
