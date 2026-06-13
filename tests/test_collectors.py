@@ -717,3 +717,32 @@ def test_tencent_all_codes_falls_back_to_tushare(monkeypatch):
     monkeypatch.setattr(tushare_client, "get_pro", lambda *a, **kw: FakeBasicPro())
     assert tencent._all_codes(FakeBrokenClient()) == [
         "sz000001", "sh600519", "bj830799"]
+
+
+def test_eastmoney_board_falls_back_to_tushare(monkeypatch):
+    """push2 不可达时,概念板块回退 tushare 同花顺板块,列对齐 BOARD_COLUMNS。"""
+    import httpx
+
+    from backend.services.collectors import tushare_client
+
+    def boom(*a, **k):
+        raise httpx.ConnectError("push2 blocked")
+
+    monkeypatch.setattr(eastmoney.httpx, "get", boom)
+
+    class FakePro:
+        def ths_index(self, exchange, type):
+            return pd.DataFrame({"ts_code": ["885001.TI", "885002.TI"],
+                                 "name": ["概念A", "概念B"]})
+
+        def ths_daily(self, trade_date):
+            assert trade_date == "20260612"
+            return pd.DataFrame({"ts_code": ["885001.TI"], "pct_change": [3.5]})
+
+    monkeypatch.setattr(tushare_client, "get_pro", lambda *a, **k: FakePro())
+
+    fetch = eastmoney._board_fetch("m:90+t:3", "N")
+    cols, rows = fetch({}, {"data_interval_end": "2026-06-12 17:00:00"})
+    assert cols == eastmoney.BOARD_COLUMNS
+    assert rows[0] == ("885001.TI", "概念A", 3.5, None, None, None, None)
+    assert rows[1] == ("885002.TI", "概念B", None, None, None, None, None)  # 当日无行情→涨跌幅 None

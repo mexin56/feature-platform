@@ -114,11 +114,41 @@ def _clist_params(fs: str, fields: list[str], pn: int = 1, fid: str = "f3") -> d
             "fid": fid, "fs": fs, "fields": ",".join(fields)}
 
 
-def _board_fetch(fs: str):
+def _board_fetch(fs: str, ths_type: str):
+    """push2 clist 优先;push2 不可达(部分网络屏蔽 *.eastmoney.com push2 域名族)
+    时回退 tushare 同花顺板块(ths_index 板块全集 + ths_daily 当日涨跌),列对齐 BOARD_COLUMNS。
+    ths_type: 'I'=行业 'N'=概念(同花顺口径)。"""
     def fetch(args, ctx):
-        payload = _get_json(CLIST_URL, _clist_params(fs, BOARD_FIELDS))
-        return list(BOARD_COLUMNS), parse_clist(payload, BOARD_FIELDS)
+        try:
+            payload = _get_json(CLIST_URL, _clist_params(fs, BOARD_FIELDS))
+            rows = parse_clist(payload, BOARD_FIELDS)
+            if rows:
+                return list(BOARD_COLUMNS), rows
+        except httpx.HTTPError:
+            pass
+        return list(BOARD_COLUMNS), _board_rows_tushare(ths_type, ctx)
     return fetch
+
+
+def _board_rows_tushare(ths_type: str, ctx) -> list[tuple]:
+    from .tushare_client import get_pro
+
+    pro = get_pro(ctx.get("tushare_token") if isinstance(ctx, dict) else None)
+    idx = pro.ths_index(exchange="A", type=ths_type)  # ts_code, name, count, ...
+    dt_nodash = c.ctx_dt(ctx).replace("-", "")
+    pct = {}
+    try:
+        daily = pro.ths_daily(trade_date=dt_nodash)  # ts_code, pct_change, ...
+        if daily is not None and not daily.empty and "pct_change" in daily.columns:
+            pct = dict(zip(daily["ts_code"], daily["pct_change"]))
+    except Exception:  # noqa: BLE001  当日无行情(非交易日/盘中)时仅缺涨跌幅
+        pass
+    rows = []
+    for ts_code, name in zip(idx["ts_code"], idx["name"]):
+        v = pct.get(ts_code)
+        rows.append((ts_code, name, None if v is None else float(v),
+                     None, None, None, None))  # 同花顺口径无涨跌家数/领涨股
+    return rows
 
 
 def fetch_market_fund_flow_spot(args, ctx):
@@ -169,10 +199,12 @@ def fetch_stock_news(args, ctx):
     return list(STOCK_NEWS_COLUMNS), rows
 
 
-_reg("industry_boards", "行业板块列表", "push2 clist fs=m:90+t:2 板块行情快照",
-     "snapshot", _board_fetch("m:90+t:2"))
-_reg("concept_boards", "概念板块列表", "push2 clist fs=m:90+t:3 板块行情快照",
-     "snapshot", _board_fetch("m:90+t:3"))
+_reg("industry_boards", "行业板块列表",
+     "push2 clist fs=m:90+t:2(push2 屏蔽时回退 tushare 同花顺行业板块)",
+     "snapshot", _board_fetch("m:90+t:2", "I"))
+_reg("concept_boards", "概念板块列表",
+     "push2 clist fs=m:90+t:3(push2 屏蔽时回退 tushare 同花顺概念板块)",
+     "snapshot", _board_fetch("m:90+t:3", "N"))
 _reg("market_fund_flow_spot", "全市场个股资金流快照",
      "push2 clist 主力/超大/大/中/小单净流入与占比(分页)",
      "snapshot", fetch_market_fund_flow_spot)

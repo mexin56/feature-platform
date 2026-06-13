@@ -56,11 +56,16 @@ const SOURCE_COLORS = {
   qmt: 'default',
 }
 
-/* 默认工作流名称 */
-function defaultWorkflowName() {
+/* 默认工作流名称:数据源+数据集名,避免多个工作流重名 */
+function defaultWorkflowName(selected = []) {
   const d = new Date()
   const ymd = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`
-  return `数据采集_${ymd}`
+  if (selected.length === 0) return `数据采集_${ymd}`
+  // 单个:源_数据集名;多个:源_数据集名+N(取首个数据集,标注总数)
+  const first = selected[0]
+  const base = `${first.source}_${first.name || first.dataset || first.key}`
+  const tag = selected.length > 1 ? `等${selected.length}项` : ''
+  return `${base}${tag}_${ymd}`
 }
 
 /* ── JSON TextArea 解析辅助 ── */
@@ -554,7 +559,7 @@ export default function DataCollect() {
   const openWfModal = () => {
     wfForm.resetFields()
     wfForm.setFieldsValue({
-      name: defaultWorkflowName(),
+      name: defaultWorkflowName(selectedDatasets),
       cron: '0 17 * * 1-5',
       interval_sec: 0.5,
     })
