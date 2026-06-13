@@ -22,9 +22,13 @@ def _reg(dataset: str, name: str, desc: str, fetch) -> None:
 
 
 def bs_code(sym: str) -> str:
-    """6 位代码 → baostock 代码(6 开头→sh.,否则 sz.);已带前缀原样返回。"""
+    """代码归一化:XXXXXX.SH/XXXXXX.SZ(大小写均可)→ sh./sz.XXXXXX;
+    纯 6 位代码 6 开头→sh.,否则 sz.;已带 sh./sz. 前缀等其余形态原样返回。"""
     s = str(sym).lower()
     if "." in s:
+        code, _, mkt = s.partition(".")
+        if mkt in ("sh", "sz") and code.isdigit():
+            return f"{mkt}.{code}"
         return s
     return ("sh." if s.startswith("6") else "sz.") + s
 

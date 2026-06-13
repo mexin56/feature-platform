@@ -115,6 +115,20 @@ def test_catalog_duckdb_views_with_columns(client, admin_headers):
     assert [c["name"] for c in demo["columns"]] == ["cust_no", "v"]
 
 
+def test_catalog_duckdb_degrades_on_corrupted_market_db(client, admin_headers):
+    """写入期间/损坏的 market.duckdb:catalog 200,market_tables 降级为空且 views 不受影响。"""
+    h, _ = _mk_ws(client, admin_headers)
+    _mk_fg_with_parquet(client, h, "select 'C1' cust_no, 1 v")
+    p = client.app.state.settings.market_db
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_bytes(b"\x00not a duckdb file\xff" * 64)
+    r = client.get("/api/query/catalog?engine=duckdb", headers=h)
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["market_tables"] == []
+    assert [v["name"] for v in body["views"]] == ["demo_fg"]
+
+
 def test_catalog_connection_databases_and_tables(client, admin_headers, monkeypatch):
     h, _ = _mk_ws(client, admin_headers)
     cid = client.post("/api/connections", json={

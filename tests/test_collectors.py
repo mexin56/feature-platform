@@ -518,6 +518,24 @@ def test_baostock_quarter_default_prev_quarter(monkeypatch, sleeps):
     assert state == {"login": 1, "logout": 1}
 
 
+def test_baostock_code_suffix_normalized(monkeypatch, sleeps):
+    """交易所后缀写法(XXXXXX.SH/.sz,大小写均可)归一化为 baostock 的 sh./sz. 前缀。"""
+    from backend.services.collectors import baostock_src
+
+    calls = []
+
+    def k(code, fields, start_date, end_date, frequency, adjustflag):
+        calls.append(code)
+        return FakeRS(fields.split(","), [])
+
+    _fake_bs(monkeypatch, query_history_k_data_plus=k)
+    CATALOG["baostock.history_k_daily"].fetch(
+        {"symbols": ["600519.SH", "000001.sz", "sh.600000", "300750"],
+         "interval_sec": 0}, CTX)
+    assert calls == ["sh.600519", "sz.000001", "sh.600000", "sz.300750"]
+    assert baostock_src.bs_code("688981.Sh") == "sh.688981"
+
+
 def test_baostock_error_code_raises(monkeypatch):
     _fake_bs(monkeypatch, query_history_k_data_plus=lambda *a, **kw: FakeRS(
         [], [], error_code="10001", error_msg="网络超时"))
@@ -581,6 +599,28 @@ def test_tushare_fina_indicator_per_symbol(monkeypatch, sleeps):
     assert cols == ["symbol", "ts_code", "roe"]
     assert [r[0] for r in rows] == ["000001.SZ", "600519.SH"]
     assert sleeps == [0.02]
+
+
+def test_tushare_ts_code_normalized(monkeypatch, sleeps):
+    """裸 6 位代码归一化为 ts_code:6 开头→.SH,4/8 开头→.BJ,其余→.SZ;已含 . 原样。"""
+    pro = FakePro(lambda n, kw: pd.DataFrame({"ts_code": [kw["ts_code"]]}))
+    monkeypatch.setattr(tushare_src, "get_pro", lambda *a, **kw: pro)
+    CATALOG["tushare.fina_indicator"].fetch(
+        {"symbols": ["600519", "000001", "830001", "430047", "000001.SZ"],
+         "interval_sec": 0}, CTX)
+    assert [kw["ts_code"] for _, kw in pro.calls] == [
+        "600519.SH", "000001.SZ", "830001.BJ", "430047.BJ", "000001.SZ"]
+
+    bars = []
+
+    def fake_pro_bar(pro, **kw):
+        bars.append(kw["ts_code"])
+        return pd.DataFrame({"close": [1.0]})
+
+    monkeypatch.setattr(tushare_src, "pro_bar", fake_pro_bar)
+    CATALOG["tushare.pro_bar_daily"].fetch(
+        {"symbols": ["600519", "830001"], "interval_sec": 0}, CTX)
+    assert bars == ["600519.SH", "830001.BJ"]
 
 
 def test_tushare_pro_bar_daily_window(monkeypatch, sleeps):
@@ -657,3 +697,23 @@ def test_mootdx_finance_per_symbol(monkeypatch, sleeps):
     assert cols == ["symbol", "code", "bps"]
     assert rows == [("000001", "000001", None), ("600519.SH", "600519", None)]
     assert sleeps == [0.0] and cli.closed
+
+
+# ---------- tencent ----------
+
+def test_tencent_all_codes_falls_back_to_tushare(monkeypatch):
+    """东财 push2 代码全集不可达时,经 tushare stock_basic 兜底并保留 sh/sz/bj 前缀。"""
+    from backend.services.collectors import tencent, tushare_client
+
+    class FakeBrokenClient:
+        def get(self, url, **kw):
+            raise RuntimeError("push2 域名被屏蔽")
+
+    class FakeBasicPro:
+        def stock_basic(self, list_status, fields):
+            assert (list_status, fields) == ("L", "ts_code")
+            return pd.DataFrame({"ts_code": ["000001.SZ", "600519.SH", "830799.BJ"]})
+
+    monkeypatch.setattr(tushare_client, "get_pro", lambda *a, **kw: FakeBasicPro())
+    assert tencent._all_codes(FakeBrokenClient()) == [
+        "sz000001", "sh600519", "bj830799"]

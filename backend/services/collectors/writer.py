@@ -43,7 +43,11 @@ def write_market(settings, table: str, dt: str, columns: list[str],
     db_path.parent.mkdir(parents=True, exist_ok=True)
     full_cols = list(columns) + ["dt", "collected_at"]
     data = [tuple(r) + (dt, collected_at) for r in rows]
-    con = duckdb.connect(str(db_path))
+    try:
+        con = duckdb.connect(str(db_path))
+    except duckdb.IOException as e:  # duckdb 单写多读:写锁被其他任务占用
+        raise RuntimeError(
+            "market.duckdb 正被其他任务写入,请稍后重试(任务将自动重试)") from e
     try:
         exists = con.execute(
             "select count(*) from information_schema.tables "

@@ -52,6 +52,19 @@ def test_catalog_stats_reflect_market_db(client, admin_headers):
     assert by_key["tencent.index_spot"]["stats"] is None  # 表不存在 → null
 
 
+def test_catalog_degrades_on_corrupted_market_db(client, admin_headers):
+    """写入期间/损坏的 market.duckdb:目录 200 且 stats 全 null,不拖垮接口。"""
+    h, _ = _mk_dev_with_project(client, admin_headers)
+    p = client.app.state.settings.market_db
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_bytes(b"\x00not a duckdb file\xff" * 64)
+    r = client.get("/api/datasets", headers=h)
+    assert r.status_code == 200, r.text
+    items = r.json()
+    assert len(items) >= 70
+    assert all(d["stats"] is None for d in items)
+
+
 # ---------- seed-workflow ----------
 
 def test_seed_workflow_linear_chain_and_params(client, admin_headers):
@@ -84,6 +97,23 @@ def test_seed_workflow_linear_chain_and_params(client, admin_headers):
     assert per["params"] == {"dataset_key": "sina.financial_report_lrb",
                              "args": {"symbols": ["000001", "600519"],
                                       "interval_sec": 1.5}}
+    # per_symbol 动态超时:max(1800, 股票数*间隔*2+600);小池取下限 1800
+    assert per["timeout_sec"] == max(1800, int(2 * 1.5 * 2 + 600)) == 1800
+
+
+def test_seed_workflow_per_symbol_dynamic_timeout(client, admin_headers):
+    """大股票池逐股节点超时随池子放大,snapshot 节点维持固定 1800。"""
+    h, _ = _mk_dev_with_project(client, admin_headers)
+    symbols = [f"{i:06d}" for i in range(2000)]
+    body = {"name": "大池采集", "interval_sec": 0.5, "symbols": symbols,
+            "dataset_keys": ["sina.financial_report_lrb", "tencent.spot"]}
+    r = client.post("/api/datasets/seed-workflow", json=body, headers=h)
+    assert r.status_code == 200, r.text
+    wf = client.get(f"/api/workflows/{r.json()['id']}", headers=h).json()
+    by_key = {n["key"]: n for n in wf["dag"]["nodes"]}
+    # max(1800, 2000*0.5*2+600) = 2600
+    assert by_key["sina__financial_report_lrb"]["timeout_sec"] == 2600
+    assert by_key["tencent__spot"]["timeout_sec"] == 1800  # snapshot 固定
 
 
 def test_seed_workflow_per_symbol_requires_symbols(client, admin_headers):

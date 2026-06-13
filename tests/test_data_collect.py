@@ -68,6 +68,18 @@ def test_writer_rejects_bad_table_name(tmp_path):
         write_market(s, "Bad-Name;drop", "2026-06-11", ["a"], [(1,)])
 
 
+def test_writer_concurrent_write_friendly_error(tmp_path, monkeypatch):
+    """写锁被其他任务占用(duckdb.IOException)→ 友好 RuntimeError,可被节点重试。"""
+    s = _env(tmp_path)
+
+    def locked(*a, **kw):
+        raise duckdb.IOException("Could not set lock on file")
+
+    monkeypatch.setattr(duckdb, "connect", locked)
+    with pytest.raises(RuntimeError, match="正被其他任务写入"):
+        write_market(s, "ods_test_x", "2026-06-11", ["a"], [(1,)])
+
+
 # ---------- 目录与可用性 ----------
 
 def test_catalog_has_tencent_datasets():

@@ -16,6 +16,18 @@ def _pro(ctx: dict):
     return get_pro(token or None)
 
 
+def _ts_code(sym: str) -> str:
+    """裸代码 → tushare ts_code:6 开头→.SH,4/8 开头→.BJ,其余→.SZ;已含 . 原样返回。"""
+    s = str(sym)
+    if "." in s:
+        return s
+    if s.startswith("6"):
+        return f"{s}.SH"
+    if s.startswith(("4", "8")):
+        return f"{s}.BJ"
+    return f"{s}.SZ"
+
+
 def _reg(dataset: str, name: str, desc: str, mode: str, fetch) -> None:
     register(DataSet(
         key=f"tushare.{dataset}", source="tushare", name=name, module="tushare",
@@ -58,7 +70,8 @@ def _per_symbol_fetch(api_name: str):
         pro = _pro(ctx)
         limit = int((args or {}).get("limit", 8))
         return c.per_symbol_df(
-            args, lambda sym: getattr(pro, api_name)(ts_code=sym, limit=limit))
+            args, lambda sym: getattr(pro, api_name)(ts_code=_ts_code(sym),
+                                                     limit=limit))
     return fetch
 
 
@@ -70,7 +83,7 @@ def fetch_pro_bar_daily(args, ctx):
     start = c.nodash(a.get("start_date") or c.days_before(dt, 30))
     end = c.nodash(a.get("end_date") or dt)
     return c.per_symbol_df(args, lambda sym: pro_bar(
-        pro, ts_code=sym, adj="qfq", start_date=start, end_date=end))
+        pro, ts_code=_ts_code(sym), adj="qfq", start_date=start, end_date=end))
 
 
 _SNAPSHOTS = [

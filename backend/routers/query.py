@@ -137,16 +137,19 @@ def catalog(engine: str, connection_id: int | None = None, db: str | None = None
                 views.append({"name": n,
                               "columns": [{"name": c[0], "dtype": c[1]} for c in cols]})
             market_tables = []
-            if attach_market(con, settings):
-                tbls = con.execute(
-                    "select table_name from information_schema.tables "
-                    "where table_catalog = 'market' and table_schema = 'main' "
-                    "order by table_name").fetchall()
-                for (t,) in tbls:
-                    cols = con.execute(f'describe market."{t}"').fetchall()
-                    market_tables.append(
-                        {"name": f"market.{t}",
-                         "columns": [{"name": c[0], "dtype": c[1]} for c in cols]})
+            try:
+                if attach_market(con, settings):
+                    tbls = con.execute(
+                        "select table_name from information_schema.tables "
+                        "where table_catalog = 'market' and table_schema = 'main' "
+                        "order by table_name").fetchall()
+                    for (t,) in tbls:
+                        cols = con.execute(f'describe market."{t}"').fetchall()
+                        market_tables.append(
+                            {"name": f"market.{t}",
+                             "columns": [{"name": c[0], "dtype": c[1]} for c in cols]})
+            except duckdb.Error:  # 写入期间/损坏的 market 库:降级为空,不影响 views
+                market_tables = []
             return {"views": views, "market_tables": market_tables}
         finally:
             con.close()

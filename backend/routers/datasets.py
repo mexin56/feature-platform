@@ -17,27 +17,30 @@ NODE_RETRIES, NODE_RETRY_DELAY_SEC, NODE_TIMEOUT_SEC = 1, 60, 1800
 
 def _market_stats(settings) -> dict[str, dict]:
     """market.duckdb 中全部 ods_ 表的 {table: {rows, max_dt}}:一次连接批量统计,
-    再映射回目录(库不存在返回空 dict,目录侧 stats=null)。"""
+    再映射回目录(库不存在/正被写入/文件损坏返回空 dict,目录侧 stats=null)。"""
     p = Path(getattr(settings, "market_db", "") or "")
     if not str(p) or not p.exists():
         return {}
     import duckdb
 
     stats: dict[str, dict] = {}
-    con = duckdb.connect(str(p), read_only=True)
     try:
-        tables = [r[0] for r in con.execute(
-            "select table_name from information_schema.tables "
-            "where table_schema='main' and table_name like 'ods_%'").fetchall()]
-        for t in tables:  # 表名来自 information_schema 且 writer 已限 [a-z0-9_]
-            try:
-                rows, max_dt = con.execute(
-                    f'select count(*), max(dt) from "{t}"').fetchone()
-            except duckdb.Error:  # 缺 dt 列等异常表:跳过不拖垮目录
-                continue
-            stats[t] = {"rows": rows, "max_dt": max_dt}
-    finally:
-        con.close()
+        con = duckdb.connect(str(p), read_only=True)
+        try:
+            tables = [r[0] for r in con.execute(
+                "select table_name from information_schema.tables "
+                "where table_schema='main' and table_name like 'ods_%'").fetchall()]
+            for t in tables:  # 表名来自 information_schema 且 writer 已限 [a-z0-9_]
+                try:
+                    rows, max_dt = con.execute(
+                        f'select count(*), max(dt) from "{t}"').fetchone()
+                except duckdb.Error:  # 缺 dt 列等异常表:跳过不拖垮目录
+                    continue
+                stats[t] = {"rows": rows, "max_dt": max_dt}
+        finally:
+            con.close()
+    except duckdb.Error:  # 写入期间锁冲突/损坏库:目录降级为无统计
+        return {}
     return stats
 
 
@@ -79,12 +82,18 @@ def seed_workflow(body: SeedWorkflowIn, db=Depends(get_db),
     nodes, edges, prev = [], [], None
     for k in body.dataset_keys:
         node_key = k.replace(".", "__")
+        per_symbol = CATALOG[k].mode == "per_symbol"
         args = ({"symbols": body.symbols, "interval_sec": body.interval_sec}
-                if CATALOG[k].mode == "per_symbol" else {})
+                if per_symbol else {})
+        # 逐股节点随股票池动态放大超时(每股按 2 倍间隔留余量 + 10 分钟基量),
+        # 下限维持 snapshot 的固定 1800s
+        timeout_sec = (max(NODE_TIMEOUT_SEC,
+                           int(len(body.symbols) * body.interval_sec * 2 + 600))
+                       if per_symbol else NODE_TIMEOUT_SEC)
         nodes.append({"key": node_key, "type": "data_collect",
                       "params": {"dataset_key": k, "args": args},
                       "retries": NODE_RETRIES, "retry_delay_sec": NODE_RETRY_DELAY_SEC,
-                      "timeout_sec": NODE_TIMEOUT_SEC})
+                      "timeout_sec": timeout_sec})
         if prev is not None:
             edges.append([prev, node_key])  # 按所选顺序线性串链,防限频
         prev = node_key
