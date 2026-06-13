@@ -135,6 +135,8 @@ def _validate_custom(mode: str, collector_type: str, config: dict) -> None:
         raise HTTPException(400, "http_json 配置必须包含 url")
     if collector_type == "tushare_api" and not (config or {}).get("api_name"):
         raise HTTPException(400, "tushare_api 配置必须包含 api_name")
+    if collector_type == "wencai" and not (config or {}).get("query"):
+        raise HTTPException(400, "爱问财采集器需配置 query")
 
 
 @router.post("/custom")

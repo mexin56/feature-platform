@@ -40,6 +40,7 @@ const SOURCE_LABELS = {
   sina: '新浪财经',
   cninfo: '巨潮',
   qmt: 'QMT',
+  wencai: '爱问财',
 }
 
 /* 来源 Tag 固定颜色 */
@@ -54,6 +55,7 @@ const SOURCE_COLORS = {
   sina: 'volcano',
   cninfo: 'lime',
   qmt: 'default',
+  wencai: 'magenta',
 }
 
 /* 默认工作流名称:数据源+数据集名,避免多个工作流重名 */
@@ -120,6 +122,9 @@ function CustomDatasetDrawer({ open, editRecord, onClose, onSuccess }) {
         fieldsToSet.body = cfg.body ? JSON.stringify(cfg.body, null, 2) : ''
         fieldsToSet.records_path = cfg.records_path ?? ''
         fieldsToSet.field_map = cfg.field_map && Object.keys(cfg.field_map).length ? JSON.stringify(cfg.field_map, null, 2) : ''
+      } else if (ct === 'wencai') {
+        fieldsToSet.query = cfg.query ?? ''
+        fieldsToSet.loop = cfg.loop ?? false
       } else {
         fieldsToSet.api_name = cfg.api_name ?? ''
         fieldsToSet.tushare_params = cfg.params && Object.keys(cfg.params).length ? JSON.stringify(cfg.params, null, 2) : ''
@@ -154,6 +159,11 @@ function CustomDatasetDrawer({ open, editRecord, onClose, onSuccess }) {
       }
       if (values.method === 'POST') cfg.body = bodyVal ?? null
       return cfg
+    } else if (ct === 'wencai') {
+      return {
+        query: values.query,
+        loop: values.loop ?? false,
+      }
     } else {
       const params = parseJsonField(values.tushare_params, 'params')
       return {
@@ -307,16 +317,29 @@ function CustomDatasetDrawer({ open, editRecord, onClose, onSuccess }) {
         </Form.Item>
 
         <Form.Item name="mode" label="采集模式">
-          <Radio.Group onChange={(e) => setMode(e.target.value)}>
+          <Radio.Group
+            onChange={(e) => setMode(e.target.value)}
+            disabled={collectorType === 'wencai'}
+          >
             <Radio value="snapshot">快照 (snapshot)</Radio>
             <Radio value="per_symbol">逐股 (per_symbol)</Radio>
           </Radio.Group>
         </Form.Item>
 
         <Form.Item name="collector_type" label="采集器类型">
-          <Radio.Group onChange={(e) => setCollectorType(e.target.value)}>
+          <Radio.Group
+            onChange={(e) => {
+              const ct = e.target.value
+              setCollectorType(ct)
+              if (ct === 'wencai') {  // 问财仅支持快照,强制 snapshot
+                setMode('snapshot')
+                form.setFieldsValue({ mode: 'snapshot' })
+              }
+            }}
+          >
             <Radio value="http_json">HTTP JSON</Radio>
             <Radio value="tushare_api">tushare 通用</Radio>
+            <Radio value="wencai">爱问财</Radio>
           </Radio.Group>
         </Form.Item>
 
@@ -417,6 +440,27 @@ function CustomDatasetDrawer({ open, editRecord, onClose, onSuccess }) {
           </>
         )}
 
+        {collectorType === 'wencai' && (
+          <>
+            <Form.Item
+              name="query"
+              label="问财查询语句"
+              rules={[{ required: true, message: '请输入问财查询语句' }]}
+              extra="同花顺问财自然语言，支持 {dt}（YYYY-MM-DD）、{dt_nodash}（YYYYMMDD）占位"
+            >
+              <Input.TextArea rows={3} placeholder="如：今日涨停 连续涨停天数大于2" />
+            </Form.Item>
+
+            <Form.Item
+              name="loop"
+              label="翻页取全量（慢）"
+              valuePropName="checked"
+            >
+              <Switch />
+            </Form.Item>
+          </>
+        )}
+
         {/* 测试拉取区 */}
         <Divider style={{ margin: '12px 0' }}>测试拉取</Divider>
         <Space style={{ marginBottom: 12 }} wrap>
@@ -446,7 +490,6 @@ function CustomDatasetDrawer({ open, editRecord, onClose, onSuccess }) {
               dataSource={testResult.rows.map((r, i) => ({
                 ...Object.fromEntries(r.map((v, ci) => [ci, v])), __key: i,
               }))}
-              rowKey="__key"
               rowKey="__key"
               pagination={false}
               scroll={{ x: 'max-content' }}

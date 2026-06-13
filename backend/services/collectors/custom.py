@@ -14,7 +14,7 @@ from .tushare_src import _ts_code
 
 TIMEOUT = 20
 UA = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
-COLLECTOR_TYPES = ("http_json", "tushare_api")
+COLLECTOR_TYPES = ("http_json", "tushare_api", "wencai")
 
 
 def _render(value, vars: dict):
@@ -124,12 +124,28 @@ def exec_tushare(config: dict, args: dict, ctx: dict,
     return c.per_symbol_df(args, lambda sym: call({**base, "symbol": _ts_code(sym)}))
 
 
-_EXECUTORS = {"http_json": exec_http_json, "tushare_api": exec_tushare}
+def exec_wencai(config: dict, args: dict, ctx: dict,
+                mode: str = "snapshot") -> tuple[list[str], list[tuple]]:
+    """爱问财执行:config.query(渲染 {dt}/{dt_nodash}),loop 默认 False;复用
+    wencai._run_query(列名清洗/NaN→None)。snapshot only,忽略 symbols。"""
+    from .wencai import _run_query
+
+    return _run_query(config.get("query") or "", ctx or {},
+                      loop=config.get("loop", False))
+
+
+_EXECUTORS = {"http_json": exec_http_json, "tushare_api": exec_tushare,
+              "wencai": exec_wencai}
+
+
+_MODULE_BY_TYPE = {"tushare_api": "tushare", "wencai": "pywencai"}
+_REQUIRES_BY_TYPE = {"tushare_api": "token", "wencai": "package"}
 
 
 def build_dataset(row: dict) -> DataSet:
     """custom_datasets 行(config 已解析为 dict)→ DataSet。
-    http_json 恒可用;tushare_api 复用 requires=token 语义(仅需 tushare 包)。"""
+    http_json 恒可用;tushare_api 复用 requires=token 语义(仅需 tushare 包);
+    wencai 复用 requires=package(检测 pywencai 包,另需本机 node.js)。"""
     ctype = row.get("collector_type") or ""
     exec_fn = _EXECUTORS.get(ctype)
     if exec_fn is None:
@@ -144,9 +160,9 @@ def build_dataset(row: dict) -> DataSet:
     return DataSet(
         key=key, source=row.get("source") or key.split(".", 1)[0],
         name=row.get("name") or key,
-        module="tushare" if ctype == "tushare_api" else "httpx",
+        module=_MODULE_BY_TYPE.get(ctype, "httpx"),
         desc=row.get("description") or "", mode=mode,
-        requires="token" if ctype == "tushare_api" else None,
+        requires=_REQUIRES_BY_TYPE.get(ctype),
         target_table=row.get("target_table") or "ods_" + key.replace(".", "_"),
         fetch=fetch)
 

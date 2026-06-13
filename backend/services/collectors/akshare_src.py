@@ -128,10 +128,9 @@ _snap("stock_hot_rank_em", "股票热度排名", "ak.stock_hot_rank_em 东财人
 _snap("stock_market_activity_legu", "市场赚钱效应(乐咕)",
       "ak.stock_market_activity_legu(缺失时尝试 *_em 变体)",
       ("stock_market_activity_legu", "stock_market_activity_em"))
-_snap("stock_hsgt_north_net_flow_in_em", "北向资金净流入",
-      'ak.stock_hsgt_north_net_flow_in_em(symbol="北上")',
-      "stock_hsgt_north_net_flow_in_em",
-      kw=lambda a, ctx: {"symbol": a.get("symbol", "北上")})
+_snap("stock_hsgt_fund_summary", "沪深港通资金流向",
+      "ak.stock_hsgt_fund_flow_summary_em 沪深港通资金流向汇总",
+      "stock_hsgt_fund_flow_summary_em")
 _reg("margin_sz_sh_daily", "融资融券(沪深)",
      "stock_margin_sse+szse 拼接,版本差异 try 兼容", "snapshot", fetch_margin)
 
