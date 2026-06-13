@@ -3,8 +3,10 @@ import {
   DeleteOutlined,
   EditOutlined,
   PlusOutlined,
+  RollbackOutlined,
 } from '@ant-design/icons'
 import {
+  Alert,
   Button,
   Divider,
   Drawer,
@@ -80,6 +82,20 @@ function parseJsonField(value, fieldLabel) {
   }
 }
 
+/**
+ * Determine edit mode from the record passed to the drawer.
+ *  'new'              – no record (new custom dataset)
+ *  'edit_custom'      – record.custom === true  (existing pure custom)
+ *  'edit_override'    – record.overridden === true (existing override of a builtin)
+ *  'first_override'   – editable builtin, not overridden yet (first-time override)
+ */
+function resolveEditMode(editRecord) {
+  if (!editRecord) return 'new'
+  if (editRecord.custom) return 'edit_custom'
+  if (editRecord.overridden) return 'edit_override'
+  return 'first_override'
+}
+
 /* ── 自定义数据集 Drawer ── */
 function CustomDatasetDrawer({ open, editRecord, onClose, onSuccess }) {
   const [form] = Form.useForm()
@@ -92,18 +108,43 @@ function CustomDatasetDrawer({ open, editRecord, onClose, onSuccess }) {
   const [sourceVal, setSourceVal] = useState('')
   const [datasetVal, setDatasetVal] = useState('')
 
-  const isEdit = !!editRecord
+  const editMode = resolveEditMode(editRecord)
+  const isEdit = editMode !== 'new'
+
+  /* source/dataset inputs are locked whenever editing anything OR first-time override */
+  const slugDisabled = isEdit || editMode === 'first_override'
+
+  /* Drawer title */
+  const drawerTitle = (() => {
+    if (editMode === 'new') return '新建自定义数据集'
+    if (editMode === 'edit_custom') return '编辑自定义数据集'
+    if (editMode === 'first_override') return `覆盖内置数据集：${editRecord.key}`
+    if (editMode === 'edit_override') return `编辑覆盖：${editRecord.key}`
+    return '编辑数据集'
+  })()
 
   useEffect(() => {
     if (!open) return
-    if (isEdit) {
+    setTestResult(null)
+
+    if (editMode === 'new') {
+      form.resetFields()
+      setCollectorType('http_json')
+      setMode('snapshot')
+      setSourceVal('')
+      setDatasetVal('')
+      form.setFieldsValue({ collector_type: 'http_json', mode: 'snapshot', method: 'GET' })
+      return
+    }
+
+    if (editMode === 'edit_custom' || editMode === 'edit_override') {
+      /* Both cases: record already has collector_type, config, mode directly */
       const cfg = editRecord.config ?? {}
       const ct = editRecord.collector_type ?? 'http_json'
       setCollectorType(ct)
       setMode(editRecord.mode ?? 'snapshot')
       setSourceVal(editRecord.source ?? '')
       setDatasetVal(editRecord.dataset ?? '')
-      setTestResult(null)
 
       const fieldsToSet = {
         source: editRecord.source,
@@ -113,34 +154,57 @@ function CustomDatasetDrawer({ open, editRecord, onClose, onSuccess }) {
         mode: editRecord.mode ?? 'snapshot',
         collector_type: ct,
       }
-
-      if (ct === 'http_json') {
-        fieldsToSet.url = cfg.url ?? ''
-        fieldsToSet.method = cfg.method ?? 'GET'
-        fieldsToSet.headers = cfg.headers && Object.keys(cfg.headers).length ? JSON.stringify(cfg.headers, null, 2) : ''
-        fieldsToSet.params = cfg.params && Object.keys(cfg.params).length ? JSON.stringify(cfg.params, null, 2) : ''
-        fieldsToSet.body = cfg.body ? JSON.stringify(cfg.body, null, 2) : ''
-        fieldsToSet.records_path = cfg.records_path ?? ''
-        fieldsToSet.field_map = cfg.field_map && Object.keys(cfg.field_map).length ? JSON.stringify(cfg.field_map, null, 2) : ''
-      } else if (ct === 'wencai') {
-        fieldsToSet.query = cfg.query ?? ''
-        fieldsToSet.loop = cfg.loop ?? false
-      } else {
-        fieldsToSet.api_name = cfg.api_name ?? ''
-        fieldsToSet.tushare_params = cfg.params && Object.keys(cfg.params).length ? JSON.stringify(cfg.params, null, 2) : ''
-        fieldsToSet.fields = cfg.fields ?? ''
-      }
+      applyConfigToFields(fieldsToSet, ct, cfg)
       form.setFieldsValue(fieldsToSet)
-    } else {
-      form.resetFields()
-      setCollectorType('http_json')
-      setMode('snapshot')
-      setSourceVal('')
-      setDatasetVal('')
-      setTestResult(null)
-      form.setFieldsValue({ collector_type: 'http_json', mode: 'snapshot', method: 'GET' })
+      return
     }
-  }, [open, editRecord, isEdit, form])
+
+    if (editMode === 'first_override') {
+      /* Pre-fill from edit_template */
+      const tpl = editRecord.edit_template ?? {}
+      const ct = tpl.collector_type ?? 'http_json'
+      const cfg = tpl.config ?? {}
+      const tplMode = tpl.mode ?? 'snapshot'
+      /* Parse source/dataset from key: "<source>.<dataset>" */
+      const [src, ...dsParts] = (editRecord.key ?? '').split('.')
+      const ds = dsParts.join('.')
+      setCollectorType(ct)
+      setMode(tplMode)
+      setSourceVal(src ?? '')
+      setDatasetVal(ds ?? '')
+
+      const fieldsToSet = {
+        source: src ?? '',
+        dataset: ds ?? '',
+        name: editRecord.name ?? '',
+        description: editRecord.desc ?? editRecord.description ?? '',
+        mode: tplMode,
+        collector_type: ct,
+      }
+      applyConfigToFields(fieldsToSet, ct, cfg)
+      form.setFieldsValue(fieldsToSet)
+    }
+  }, [open, editRecord, editMode, form])
+
+  /* Helper: populate form fields from a config object given collector_type */
+  function applyConfigToFields(fieldsToSet, ct, cfg) {
+    if (ct === 'http_json') {
+      fieldsToSet.url = cfg.url ?? ''
+      fieldsToSet.method = cfg.method ?? 'GET'
+      fieldsToSet.headers = cfg.headers && Object.keys(cfg.headers).length ? JSON.stringify(cfg.headers, null, 2) : ''
+      fieldsToSet.params = cfg.params && Object.keys(cfg.params).length ? JSON.stringify(cfg.params, null, 2) : ''
+      fieldsToSet.body = cfg.body ? JSON.stringify(cfg.body, null, 2) : ''
+      fieldsToSet.records_path = cfg.records_path ?? ''
+      fieldsToSet.field_map = cfg.field_map && Object.keys(cfg.field_map).length ? JSON.stringify(cfg.field_map, null, 2) : ''
+    } else if (ct === 'wencai') {
+      fieldsToSet.query = cfg.query ?? ''
+      fieldsToSet.loop = cfg.loop ?? false
+    } else {
+      fieldsToSet.api_name = cfg.api_name ?? ''
+      fieldsToSet.tushare_params = cfg.params && Object.keys(cfg.params).length ? JSON.stringify(cfg.params, null, 2) : ''
+      fieldsToSet.fields = cfg.fields ?? ''
+    }
+  }
 
   const buildConfig = (values) => {
     const ct = values.collector_type
@@ -208,7 +272,8 @@ function CustomDatasetDrawer({ open, editRecord, onClose, onSuccess }) {
 
     setBusy(true)
     try {
-      if (isEdit) {
+      if (editMode === 'edit_custom' || editMode === 'edit_override') {
+        /* PUT for existing custom or existing override */
         await api.put(`/api/datasets/custom/${editRecord.id}`, {
           name: values.name,
           description: values.description ?? '',
@@ -216,8 +281,22 @@ function CustomDatasetDrawer({ open, editRecord, onClose, onSuccess }) {
           collector_type: values.collector_type,
           config,
         })
-        message.success('自定义数据集已更新')
+        const successMsg = editMode === 'edit_override' ? '覆盖配置已更新' : '自定义数据集已更新'
+        message.success(successMsg)
+      } else if (editMode === 'first_override') {
+        /* POST to create override for the first time */
+        await api.post('/api/datasets/custom', {
+          source: values.source,
+          dataset: values.dataset,
+          name: values.name,
+          description: values.description ?? '',
+          mode: values.mode,
+          collector_type: values.collector_type,
+          config,
+        })
+        message.success(`已覆盖内置数据集 ${editRecord.key}`)
       } else {
+        /* New pure custom */
         await api.post('/api/datasets/custom', {
           source: values.source,
           dataset: values.dataset,
@@ -250,7 +329,7 @@ function CustomDatasetDrawer({ open, editRecord, onClose, onSuccess }) {
 
   return (
     <Drawer
-      title={isEdit ? '编辑自定义数据集' : '新增自定义数据集'}
+      title={drawerTitle}
       open={open}
       onClose={onClose}
       width={720}
@@ -263,6 +342,16 @@ function CustomDatasetDrawer({ open, editRecord, onClose, onSuccess }) {
       }
     >
       <Form form={form} layout="vertical">
+        {/* Builtin override hint */}
+        {editMode === 'first_override' && (
+          <Alert
+            type="info"
+            showIcon
+            style={{ marginBottom: 16 }}
+            message={`正在覆盖内置数据集 ${editRecord.key}；保存后采集将使用你的配置，可在该行「恢复默认」还原。`}
+          />
+        )}
+
         {/* slug 字段 */}
         <Form.Item label="来源标识 (source)" required style={{ marginBottom: 8 }}>
           <Form.Item
@@ -275,7 +364,7 @@ function CustomDatasetDrawer({ open, editRecord, onClose, onSuccess }) {
           >
             <Input
               placeholder="如 my_source（^[a-z0-9_]{2,32}$）"
-              disabled={isEdit}
+              disabled={slugDisabled}
               onChange={(e) => setSourceVal(e.target.value)}
               style={{ width: '100%' }}
             />
@@ -293,7 +382,7 @@ function CustomDatasetDrawer({ open, editRecord, onClose, onSuccess }) {
           >
             <Input
               placeholder="如 daily_price（^[a-z0-9_]{2,32}$）"
-              disabled={isEdit}
+              disabled={slugDisabled}
               onChange={(e) => setDatasetVal(e.target.value)}
               style={{ width: '100%' }}
             />
@@ -643,11 +732,21 @@ export default function DataCollect() {
     }
   }
 
-  /* ── Delete custom dataset ── */
+  /* ── Delete custom dataset or restore builtin override ── */
   const handleDeleteCustom = async (record) => {
     try {
       await api.del(`/api/datasets/custom/${record.id}`)
       message.success(`已删除数据集 ${record.name}`)
+      load()
+    } catch {
+      // error shown by api.js
+    }
+  }
+
+  const handleRestoreBuiltin = async (record) => {
+    try {
+      await api.del(`/api/datasets/custom/${record.id}`)
+      message.success(`已恢复内置默认：${record.key}`)
       load()
     } catch {
       // error shown by api.js
@@ -681,6 +780,7 @@ export default function DataCollect() {
           <Space size={4}>
             <Typography.Text strong style={{ fontSize: 13 }}>{row.name}</Typography.Text>
             {row.custom && <Tag color="purple" style={{ marginLeft: 2 }}>自定义</Tag>}
+            {row.overridden && <Tag color="gold" style={{ marginLeft: 2 }}>已覆盖</Tag>}
           </Space>
           <Typography.Text type="secondary" style={{ fontSize: 11, fontFamily: 'monospace' }}>{row.key}</Typography.Text>
         </Space>
@@ -759,36 +859,84 @@ export default function DataCollect() {
     },
     {
       title: '操作',
-      width: 100,
+      width: 120,
       render: (_, row) => {
-        if (!row.custom) return null
-        return (
-          <Space size={4}>
-            <Tooltip title="编辑">
-              <Button
-                type="text"
-                size="small"
-                icon={<EditOutlined />}
-                onClick={() => openEditDrawer(row)}
-              />
-            </Tooltip>
-            <Popconfirm
-              title="确认删除该自定义数据集？"
-              okText="删除"
-              okType="danger"
-              cancelText="取消"
-              onConfirm={() => handleDeleteCustom(row)}
-            >
-              <Tooltip title="删除">
+        /* All editable rows get 编辑 */
+        if (!row.editable) return null
+
+        /* Pure custom: 编辑 + 删除 */
+        if (row.custom) {
+          return (
+            <Space size={4}>
+              <Tooltip title="编辑">
                 <Button
                   type="text"
                   size="small"
-                  danger
-                  icon={<DeleteOutlined />}
+                  icon={<EditOutlined />}
+                  onClick={() => openEditDrawer(row)}
                 />
               </Tooltip>
-            </Popconfirm>
-          </Space>
+              <Popconfirm
+                title="确认删除该自定义数据集？"
+                okText="删除"
+                okType="danger"
+                cancelText="取消"
+                onConfirm={() => handleDeleteCustom(row)}
+              >
+                <Tooltip title="删除">
+                  <Button
+                    type="text"
+                    size="small"
+                    danger
+                    icon={<DeleteOutlined />}
+                  />
+                </Tooltip>
+              </Popconfirm>
+            </Space>
+          )
+        }
+
+        /* Overridden builtin: 编辑 + 恢复默认 */
+        if (row.overridden) {
+          return (
+            <Space size={4}>
+              <Tooltip title="编辑覆盖">
+                <Button
+                  type="text"
+                  size="small"
+                  icon={<EditOutlined />}
+                  onClick={() => openEditDrawer(row)}
+                />
+              </Tooltip>
+              <Popconfirm
+                title="恢复为内置默认采集？将删除你的覆盖配置。"
+                okText="恢复"
+                okType="danger"
+                cancelText="取消"
+                onConfirm={() => handleRestoreBuiltin(row)}
+              >
+                <Tooltip title="恢复默认">
+                  <Button
+                    type="text"
+                    size="small"
+                    icon={<RollbackOutlined />}
+                  />
+                </Tooltip>
+              </Popconfirm>
+            </Space>
+          )
+        }
+
+        /* Plain builtin (editable, not overridden): 编辑 only */
+        return (
+          <Tooltip title="覆盖内置采集配置">
+            <Button
+              type="text"
+              size="small"
+              icon={<EditOutlined />}
+              onClick={() => openEditDrawer(row)}
+            />
+          </Tooltip>
         )
       },
     },
