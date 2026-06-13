@@ -239,6 +239,27 @@ class QualityRecord(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
+class CustomDataset(Base):
+    """自定义数据集(全局不分项目):key="{source}.{dataset}" 唯一,
+    config_json 按 collector_type(http_json|tushare_api)解释,
+    target_table=ods_{source}_{dataset} 创建时派生后不可变。"""
+
+    __tablename__ = "custom_datasets"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    key: Mapped[str] = mapped_column(String(80), unique=True, index=True, nullable=False)
+    source: Mapped[str] = mapped_column(String(32), nullable=False)
+    dataset: Mapped[str] = mapped_column(String(32), nullable=False)
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    description: Mapped[str] = mapped_column(Text, default="")
+    mode: Mapped[str] = mapped_column(String(16), nullable=False)  # snapshot/per_symbol
+    collector_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    config_json: Mapped[str] = mapped_column(Text, default="{}")
+    target_table: Mapped[str] = mapped_column(String(128), nullable=False)
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
 class SystemSetting(Base):
     """全局 KV 配置(webhook_url、quality_drop_ratio 等),管理员维护。"""
 
