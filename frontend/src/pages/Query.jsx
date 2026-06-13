@@ -1,4 +1,6 @@
-import { DownloadOutlined, PlayCircleOutlined, ReloadOutlined } from '@ant-design/icons'
+import {
+  DoubleLeftOutlined, DoubleRightOutlined, DownloadOutlined, PlayCircleOutlined, ReloadOutlined,
+} from '@ant-design/icons'
 import {
   Button, Card, Empty, Input, Select, Space, Spin, Table, Tree, Typography, message,
 } from 'antd'
@@ -20,6 +22,7 @@ export default function Query() {
   const [tablesByDb, setTablesByDb] = useState({})
   const [catalogBusy, setCatalogBusy] = useState(false)
   const [search, setSearch] = useState('')
+  const [collapsed, setCollapsed] = useState(false)
 
   useEffect(() => {
     api.get('/api/connections').then((r) => setConnections(r.items ?? r)).catch(() => {})
@@ -173,18 +176,43 @@ export default function Query() {
     <div>
       <Typography.Title level={4}>数据查询</Typography.Title>
       <div style={{ display: 'flex', gap: 12, alignItems: 'stretch' }}>
-        {/* 左侧:库表目录 */}
+        {/* 左侧:库表目录(可折叠) */}
+        {collapsed ? (
+          <div
+            style={{
+              width: 36, flexShrink: 0, border: '1px solid #f0f0f0', borderRadius: 8,
+              background: '#fff', display: 'flex', flexDirection: 'column',
+              alignItems: 'center', paddingTop: 8, cursor: 'pointer',
+            }}
+            onClick={() => setCollapsed(false)}
+            title="展开库表目录"
+          >
+            <Button type="text" size="small" icon={<DoubleRightOutlined />} />
+            <span style={{ writingMode: 'vertical-rl', marginTop: 8, color: '#888', fontSize: 12, letterSpacing: 2 }}>
+              库表目录
+            </span>
+          </div>
+        ) : (
         <Card
           size="small"
           style={{ width: 280, flexShrink: 0 }}
           title="库表目录"
           extra={
-            <Button
-              type="text"
-              size="small"
-              icon={<ReloadOutlined />}
-              onClick={() => loadCatalog(engine)}
-            />
+            <Space size={0}>
+              <Button
+                type="text"
+                size="small"
+                icon={<ReloadOutlined />}
+                onClick={() => loadCatalog(engine)}
+              />
+              <Button
+                type="text"
+                size="small"
+                icon={<DoubleLeftOutlined />}
+                title="折叠"
+                onClick={() => setCollapsed(true)}
+              />
+            </Space>
           }
         >
           <Select
@@ -225,6 +253,7 @@ export default function Query() {
             点击{engine === 'duckdb' ? '视图' : '表'}名自动生成查询语句
           </Typography.Paragraph>
         </Card>
+        )}
 
         {/* 右侧:编辑器 + 结果 */}
         <div style={{ flex: 1, minWidth: 0 }}>
