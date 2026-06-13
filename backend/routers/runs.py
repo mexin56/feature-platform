@@ -134,6 +134,39 @@ def backfill(wid: int, body: BackfillIn, db=Depends(get_db),
     return {"created": created}
 
 
+@router.get("/runs")
+def list_all_runs(
+    workflow_id: int | None = None,
+    state: str | None = None,
+    run_type: str | None = None,
+    db=Depends(get_db),
+    pid=Depends(get_project_id),
+):
+    """跨工作流实例列表(项目范围)。viewer 可读。最多返回 200 条,最新优先。"""
+    # 先拉取项目内所有工作流(避免 N+1)
+    wf_rows = db.scalars(select(Workflow).where(Workflow.project_id == pid)).all()
+    wf_dict = {wf.id: wf.name for wf in wf_rows}
+    if not wf_dict:
+        return []
+
+    stmt = select(WorkflowRun).where(WorkflowRun.workflow_id.in_(wf_dict.keys()))
+    if workflow_id is not None:
+        stmt = stmt.where(WorkflowRun.workflow_id == workflow_id)
+    if state is not None:
+        stmt = stmt.where(WorkflowRun.state == state)
+    if run_type is not None:
+        stmt = stmt.where(WorkflowRun.run_type == run_type)
+    stmt = stmt.order_by(WorkflowRun.id.desc()).limit(200)
+
+    rows = db.scalars(stmt).all()
+    result = []
+    for r in rows:
+        item = _run_out(r)
+        item["workflow_name"] = wf_dict.get(r.workflow_id, "")
+        result.append(item)
+    return result
+
+
 @router.get("/workflows/{wid}/runs")
 def list_runs(wid: int, db=Depends(get_db), pid=Depends(get_project_id)):
     _wf_in_project(db, wid, pid)
@@ -193,6 +226,28 @@ def retry_run(rid: int, db=Depends(get_db), user=Depends(get_current_user),
     run.state = "running"
     run.finished_at = None
     record(db, user, "retry_run", f"run_id={rid}", project_id=pid)
+    db.commit()
+    return {"ok": True}
+
+
+@router.post("/runs/{rid}/mark-success")
+def mark_success_run(rid: int, db=Depends(get_db), user=Depends(get_current_user),
+                     pid=Depends(get_project_id)):
+    """强制整个实例成功:将所有非 success 任务置成功,实例置成功。"""
+    run = _run_in_project(db, rid, pid)
+    if run.state == "success":
+        raise HTTPException(400, "实例已成功")
+    tis = db.scalars(select(TaskInstance).where(TaskInstance.run_id == rid)).all()
+    if any(t.state == "running" for t in tis):
+        raise HTTPException(400, "存在仍在运行的任务,请先终止实例")
+    now = datetime.utcnow()
+    for t in tis:
+        if t.state != "success":
+            t.state = "success"
+            t.finished_at = now
+    run.state = "success"
+    run.finished_at = now
+    record(db, user, "mark_success_run", f"run_id={rid}", project_id=pid)
     db.commit()
     return {"ok": True}
 
