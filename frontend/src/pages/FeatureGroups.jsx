@@ -32,8 +32,15 @@ export default function FeatureGroups() {
   const [saving, setSaving] = useState(false)
   const [workflows, setWorkflows] = useState([])
   const [taskKeys, setTaskKeys] = useState([])
+  const [collected, setCollected] = useState([]) // 已落库的采集数据集(特征衍生原料)
   const [form] = Form.useForm()
   const navigate = useNavigate()
+
+  useEffect(() => {
+    api.get('/api/datasets')
+      .then((r) => setCollected((r.items ?? r).filter((d) => d.stats)))
+      .catch(() => {})
+  }, [])
 
   const load = () => {
     setLoading(true)
@@ -217,6 +224,44 @@ export default function FeatureGroups() {
         size="small"
         locale={{ emptyText: '暂无特征组' }}
       />
+
+      {collected.length > 0 && (
+        <>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '24px 0 8px' }}>
+            <div>
+              <Typography.Title level={5} style={{ margin: 0 }}>采集数据(特征衍生原料)</Typography.Title>
+              <Typography.Text type="secondary">
+                已落 market.duckdb 的原始采集表,duckdb_sql 任务与查询页可用 market.表名 访问
+              </Typography.Text>
+            </div>
+            <Button size="small" onClick={() => navigate('/datasets')}>管理采集</Button>
+          </div>
+          <Table
+            rowKey="key"
+            dataSource={collected}
+            size="small"
+            pagination={{ pageSize: 10, hideOnSinglePage: true }}
+            columns={[
+              { title: '数据集', dataIndex: 'name', width: 200 },
+              { title: '来源', dataIndex: 'source', width: 100, render: (v) => <Tag>{v}</Tag> },
+              {
+                title: '表', dataIndex: 'target_table',
+                render: (v) => <Typography.Text code>market.{v}</Typography.Text>,
+              },
+              { title: '行数', width: 110, render: (_, r) => r.stats?.rows?.toLocaleString() ?? '—' },
+              { title: '最新数据日', width: 120, render: (_, r) => r.stats?.max_dt ?? '—' },
+              {
+                title: '操作', width: 90,
+                render: (_, r) => (
+                  <Button size="small" type="link" onClick={() => navigate('/query')}>
+                    去查询
+                  </Button>
+                ),
+              },
+            ]}
+          />
+        </>
+      )}
 
       <Drawer
         title={editTarget ? `编辑特征组 — ${editTarget.name}` : '新建特征组'}
