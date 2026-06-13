@@ -67,7 +67,7 @@ def _http_body(**over):
 def test_create_custom_dataset_returns_full_row(client, admin_headers):
     h, _ = _mk_dev_with_project(client, admin_headers)
     r = client.post("/api/datasets/custom", json=_http_body(), headers=h)
-    assert r.status_code == 200, r.text
+    assert r.status_code == 201, r.text
     row = r.json()
     assert row["key"] == "myapi.spot" and row["custom"] is True
     assert isinstance(row["id"], int)
@@ -81,6 +81,7 @@ def test_create_custom_dataset_returns_full_row(client, admin_headers):
 def test_catalog_merges_custom_rows_after_builtins(client, admin_headers):
     h, _ = _mk_dev_with_project(client, admin_headers)
     rid = client.post("/api/datasets/custom", json=_http_body(), headers=h).json()["id"]
+    # POST now returns 201
     items = client.get("/api/datasets", headers=h).json()
     by_key = {d["key"]: d for d in items}
     row = by_key["myapi.spot"]
@@ -120,16 +121,25 @@ def test_delete_custom_dataset(client, admin_headers):
     assert client.delete(f"/api/datasets/custom/{rid}", headers=h).status_code == 404
 
 
-def test_create_rejects_builtin_key_collision(client, admin_headers):
+def test_create_builtin_key_creates_override(client, admin_headers):
+    """Phase 5.2: 内置 key 创建 → override (201), 二次同 key → 400。"""
     h, _ = _mk_dev_with_project(client, admin_headers)
+    # tencent.spot 是内置 key → 创建 override 成功
     r = client.post("/api/datasets/custom", headers=h,
-                    json=_http_body(source="tencent", dataset="spot"))
-    assert r.status_code == 400 and "已存在" in r.json()["detail"]
+                    json=_http_body(source="tencent", dataset="spot",
+                                    config={"url": "http://x.test/tencent", "records_path": ""}))
+    assert r.status_code == 201, r.text
+    assert r.json()["is_override"] is True
+    # 第二次 → 400 已存在覆盖
+    r2 = client.post("/api/datasets/custom", headers=h,
+                     json=_http_body(source="tencent", dataset="spot",
+                                     config={"url": "http://x.test/tencent2", "records_path": ""}))
+    assert r2.status_code == 400 and "已存在覆盖" in r2.json()["detail"]
 
 
 def test_create_rejects_duplicate_custom_key(client, admin_headers):
     h, _ = _mk_dev_with_project(client, admin_headers)
-    assert client.post("/api/datasets/custom", json=_http_body(), headers=h).status_code == 200
+    assert client.post("/api/datasets/custom", json=_http_body(), headers=h).status_code == 201
     r = client.post("/api/datasets/custom", json=_http_body(), headers=h)
     assert r.status_code == 400 and "已存在" in r.json()["detail"]
 
@@ -341,7 +351,7 @@ def test_plugin_collects_custom_dataset_end_to_end(client, admin_headers, monkey
     body = _http_body(source="myapi", dataset="flow", config={
         "url": "http://x.test/flow?d={dt_nodash}", "records_path": "data",
         "field_map": {"code": "c", "val": "v"}})
-    assert client.post("/api/datasets/custom", json=body, headers=h).status_code == 200
+    assert client.post("/api/datasets/custom", json=body, headers=h).status_code == 201
     monkeypatch.setattr(custom.httpx, "request", lambda m, u, **kw: FakeResp(
         json_data={"data": [{"c": "000001", "v": 1.5}, {"c": "600519", "v": 2.5}]}))
     s = client.app.state.settings
@@ -423,7 +433,7 @@ def test_custom_test_endpoint_errors_are_400(client, admin_headers, monkeypatch)
 def test_seed_workflow_accepts_custom_key(client, admin_headers):
     h, _ = _mk_dev_with_project(client, admin_headers)
     assert client.post("/api/datasets/custom", json=_http_body(),
-                       headers=h).status_code == 200
+                       headers=h).status_code == 201
     r = client.post("/api/datasets/seed-workflow", headers=h, json={
         "name": "含自定义采集流", "dataset_keys": ["tencent.spot", "myapi.spot"]})
     assert r.status_code == 200, r.text
@@ -438,7 +448,7 @@ def test_seed_workflow_custom_per_symbol_requires_symbols(client, admin_headers)
     h, _ = _mk_dev_with_project(client, admin_headers)
     body = _http_body(dataset="hist", mode="per_symbol",
                       config={"url": "http://x.test/{symbol}", "records_path": "l"})
-    assert client.post("/api/datasets/custom", json=body, headers=h).status_code == 200
+    assert client.post("/api/datasets/custom", json=body, headers=h).status_code == 201
     r = client.post("/api/datasets/seed-workflow", headers=h, json={
         "name": "缺池", "dataset_keys": ["myapi.hist"]})
     assert r.status_code == 400 and "myapi.hist" in r.json()["detail"]

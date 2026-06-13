@@ -31,9 +31,10 @@ def execute(params: dict, ctx: dict, env) -> dict:
     from ..collectors.writer import write_market
 
     key = params.get("dataset_key") or ""
-    ds = CATALOG.get(key)
-    if ds is None:  # 内置目录未命中 → 自定义数据集(sqlite3 直读 meta.db)
-        ds = resolve_custom(key, env.db_path)
+    # override/custom 优先:用户配置永远优先于内置 CATALOG
+    ds = resolve_custom(key, env.db_path)
+    if ds is None:
+        ds = CATALOG.get(key)
     if ds is None:
         raise RuntimeError(f"数据集不存在: {key}")
     ok, reason = available(ds)

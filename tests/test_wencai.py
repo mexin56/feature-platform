@@ -192,7 +192,7 @@ def test_create_custom_wencai_with_query_200(client, admin_headers):
         "source": "mywc", "dataset": "zt", "name": "我的问财",
         "mode": "snapshot", "collector_type": "wencai",
         "config": {"query": "今日涨停 连续涨停天数大于2", "loop": False}})
-    assert r.status_code == 200, r.text
+    assert r.status_code == 201, r.text
     row = r.json()
     assert row["key"] == "mywc.zt" and row["collector_type"] == "wencai"
     assert row["config"]["query"] == "今日涨停 连续涨停天数大于2"

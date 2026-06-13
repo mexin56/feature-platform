@@ -256,6 +256,7 @@ class CustomDataset(Base):
     collector_type: Mapped[str] = mapped_column(String(16), nullable=False)
     config_json: Mapped[str] = mapped_column(Text, default="{}")
     target_table: Mapped[str] = mapped_column(String(128), nullable=False)
+    is_override: Mapped[bool] = mapped_column(Boolean, default=False)
     created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 

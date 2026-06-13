@@ -79,6 +79,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     ensure_column(engine, "workflows", "alert_on_failure", "BOOLEAN DEFAULT 1")
     ensure_column(engine, "workflows", "alert_on_success", "BOOLEAN DEFAULT 0")
     ensure_column(engine, "workflows", "sla_time", "VARCHAR(5)")
+    ensure_column(engine, "custom_datasets", "is_override", "INTEGER DEFAULT 0")
     _seed_admin(app.state.sessionmaker)
 
     _mount_frontend(app)

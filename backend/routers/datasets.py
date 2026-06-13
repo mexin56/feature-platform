@@ -76,23 +76,68 @@ def _custom_out(row: CustomDataset) -> dict:
             "description": row.description, "mode": row.mode,
             "collector_type": row.collector_type, "config": config,
             "target_table": row.target_table, "custom": True,
+            "is_override": row.is_override,
             "created_by": row.created_by,
             "created_at": row.created_at.isoformat() if row.created_at else None}
+
+
+def _edit_template(ds) -> dict:
+    """内置数据集首次覆盖时的预填模板:tushare→tushare_api;其余→空 http_json。"""
+    if ds.source == "tushare":
+        # key 格式 "tushare.api_name"
+        dataset_part = ds.key.split(".", 1)[1] if "." in ds.key else ds.key
+        return {
+            "collector_type": "tushare_api",
+            "config": {"api_name": dataset_part, "params": {}, "fields": ""},
+            "mode": ds.mode,
+        }
+    return {
+        "collector_type": "http_json",
+        "config": {"url": "", "method": "GET", "headers": {}, "params": {},
+                   "records_path": "", "field_map": {}},
+        "mode": ds.mode,
+    }
 
 
 @router.get("")
 def list_datasets(db=Depends(get_db), user=Depends(get_current_user),
                   pid=Depends(get_project_id), settings=Depends(get_settings)):
     stats = _market_stats(settings)
+
+    # 一次性构建 override 字典(key → CustomDataset row),避免 N+1
+    override_by_key: dict[str, CustomDataset] = {}
+    for row in db.scalars(select(CustomDataset).where(CustomDataset.is_override == True)):  # noqa: E712
+        override_by_key[row.key] = row
+
     out = []
     for ds in CATALOG.values():
         ok, reason = available(ds)
-        out.append({"key": ds.key, "source": ds.source, "name": ds.name,
-                    "module": ds.module, "desc": ds.desc, "mode": ds.mode,
-                    "requires": ds.requires, "target_table": ds.target_table,
-                    "available": ok, "reason": reason,
-                    "stats": stats.get(ds.target_table)})
-    for row in db.scalars(select(CustomDataset).order_by(CustomDataset.id)):
+        item: dict = {
+            "key": ds.key, "source": ds.source, "name": ds.name,
+            "module": ds.module, "desc": ds.desc, "mode": ds.mode,
+            "requires": ds.requires, "target_table": ds.target_table,
+            "available": ok, "reason": reason,
+            "stats": stats.get(ds.target_table),
+            "editable": True,
+        }
+        ov = override_by_key.get(ds.key)
+        if ov is not None:
+            _, ov_config = _row_to_dataset(ov)
+            item["overridden"] = True
+            item["id"] = ov.id
+            item["collector_type"] = ov.collector_type
+            item["config"] = ov_config
+            # no edit_template when already overridden
+        else:
+            item["overridden"] = False
+            item["collector_type"] = None
+            item["config"] = None
+            item["edit_template"] = _edit_template(ds)
+        out.append(item)
+
+    # 纯自定义行(is_override=False)
+    for row in db.scalars(select(CustomDataset).where(
+            CustomDataset.is_override == False).order_by(CustomDataset.id)):  # noqa: E712
         ds, config = _row_to_dataset(row)
         ok, reason = available(ds)
         out.append({"key": ds.key, "source": ds.source, "name": ds.name,
@@ -100,6 +145,7 @@ def list_datasets(db=Depends(get_db), user=Depends(get_current_user),
                     "requires": ds.requires, "target_table": ds.target_table,
                     "available": ok, "reason": reason,
                     "stats": stats.get(ds.target_table),
+                    "editable": True,
                     "custom": True, "id": row.id, "dataset": row.dataset,
                     "description": row.description,
                     "collector_type": row.collector_type, "config": config})
@@ -139,24 +185,46 @@ def _validate_custom(mode: str, collector_type: str, config: dict) -> None:
         raise HTTPException(400, "爱问财采集器需配置 query")
 
 
-@router.post("/custom")
+@router.post("/custom", status_code=201)
 def create_custom(body: CustomDatasetIn, db=Depends(get_db),
                   user=Depends(get_current_user)):
-    for slug in (body.source, body.dataset):
-        if not SLUG_RE.match(slug or ""):
-            raise HTTPException(400, "source/dataset 须为 2-32 位小写字母/数字/下划线")
     _validate_custom(body.mode, body.collector_type, body.config)
     key = f"{body.source}.{body.dataset}"
-    if key in CATALOG or db.scalar(select(CustomDataset).where(CustomDataset.key == key)):
-        raise HTTPException(400, f"数据集 key 已存在(含内置目录): {key}")
-    row = CustomDataset(key=key, source=body.source, dataset=body.dataset,
-                        name=body.name, description=body.description,
-                        mode=body.mode, collector_type=body.collector_type,
-                        config_json=json.dumps(body.config, ensure_ascii=False),
-                        target_table=f"ods_{body.source}_{body.dataset}",
-                        created_by=user.id)
-    db.add(row)
-    record(db, user, "create_custom_dataset", key)
+    is_override = key in CATALOG
+
+    if is_override:
+        # 覆盖模式:key 命中内置 CATALOG;source/dataset 来自内置 key,无需 slug 校验
+        existing = db.scalar(select(CustomDataset).where(CustomDataset.key == key))
+        if existing is not None:
+            raise HTTPException(400, f"已存在覆盖,请用编辑: {key}")
+        # override 行 target_table 与内置一致(ods_{source}_{dataset})
+        target_table = CATALOG[key].target_table
+        row = CustomDataset(key=key, source=body.source, dataset=body.dataset,
+                            name=body.name, description=body.description,
+                            mode=body.mode, collector_type=body.collector_type,
+                            config_json=json.dumps(body.config, ensure_ascii=False),
+                            target_table=target_table,
+                            is_override=True,
+                            created_by=user.id)
+        db.add(row)
+        record(db, user, "override_builtin_dataset", key)
+    else:
+        # 纯自定义模式:slug 校验 + 重复检测
+        for slug in (body.source, body.dataset):
+            if not SLUG_RE.match(slug or ""):
+                raise HTTPException(400, "source/dataset 须为 2-32 位小写字母/数字/下划线")
+        if db.scalar(select(CustomDataset).where(CustomDataset.key == key)):
+            raise HTTPException(400, f"数据集 key 已存在: {key}")
+        row = CustomDataset(key=key, source=body.source, dataset=body.dataset,
+                            name=body.name, description=body.description,
+                            mode=body.mode, collector_type=body.collector_type,
+                            config_json=json.dumps(body.config, ensure_ascii=False),
+                            target_table=f"ods_{body.source}_{body.dataset}",
+                            is_override=False,
+                            created_by=user.id)
+        db.add(row)
+        record(db, user, "create_custom_dataset", key)
+
     db.commit()
     db.refresh(row)
     return _custom_out(row)
@@ -192,8 +260,12 @@ def delete_custom(cid: int, db=Depends(get_db), user=Depends(get_current_user)):
     if row is None:
         raise HTTPException(404, "自定义数据集不存在")
     key = row.key
+    is_override = bool(row.is_override)
     db.delete(row)
-    record(db, user, "delete_custom_dataset", key)
+    # override 行删除 = 恢复默认;纯自定义删除 = 移除
+    detail = f"{key}(恢复默认)" if is_override else key
+    record(db, user, "delete_override" if is_override else "delete_custom_dataset",
+           detail)
     db.commit()
     return {"ok": True}
 
@@ -245,12 +317,13 @@ class SeedWorkflowIn(BaseModel):
 @router.post("/seed-workflow")
 def seed_workflow(body: SeedWorkflowIn, db=Depends(get_db),
                   user=Depends(get_current_user), pid=Depends(get_project_id)):
-    # 合并内置目录 + 自定义数据集(按 key 查找 DataSet)
+    # 合并内置目录 + 自定义数据集(按 key 查找 DataSet);
+    # override 行替换对应内置条目,确保 available() 按覆盖后配置判定
     merged: dict[str, object] = dict(CATALOG)
     for row in db.scalars(select(CustomDataset)):
-        if row.key not in merged:
-            ds, _ = _row_to_dataset(row)
-            merged[row.key] = ds
+        # override 行覆盖内置,纯自定义行新增
+        ds, _ = _row_to_dataset(row)
+        merged[row.key] = ds
     unknown = [k for k in body.dataset_keys if k not in merged]
     if unknown:
         raise HTTPException(400, f"数据集不存在: {unknown}")
