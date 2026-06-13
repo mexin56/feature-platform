@@ -13,8 +13,9 @@ export default function Query() {
   const [busy, setBusy] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [result, setResult] = useState(null)
-  // 目录:duckdb → views [{name,columns}];connection → databases [] + tablesByDb {}
+  // 目录:duckdb → views [{name,columns}] + marketTables;connection → databases [] + tablesByDb {}
   const [views, setViews] = useState([])
+  const [marketTables, setMarketTables] = useState([])
   const [databases, setDatabases] = useState([])
   const [tablesByDb, setTablesByDb] = useState({})
   const [catalogBusy, setCatalogBusy] = useState(false)
@@ -33,6 +34,7 @@ export default function Query() {
       if (eng === 'duckdb') {
         const r = await api.get('/api/query/catalog?engine=duckdb')
         setViews(r.views ?? [])
+        setMarketTables(r.market_tables ?? [])
       } else {
         const r = await api.get(`/api/query/catalog?engine=connection&connection_id=${eng}`)
         setDatabases(r.databases ?? [])
@@ -55,17 +57,33 @@ export default function Query() {
 
   const match = (name) => !search || name.toLowerCase().includes(search.toLowerCase())
 
+  const colLeaves = (prefix, columns) => (columns ?? []).map((c) => ({
+    key: `col:${prefix}.${c.name}`,
+    title: <span>{c.name} <Typography.Text type="secondary">{c.dtype}</Typography.Text></span>,
+    selectable: false,
+    isLeaf: true,
+  }))
+
   const treeData = engine === 'duckdb'
-    ? views.filter((v) => match(v.name)).map((v) => ({
-        key: `view:${v.name}`,
-        title: v.name,
-        children: (v.columns ?? []).map((c) => ({
-          key: `col:${v.name}.${c.name}`,
-          title: <span>{c.name} <Typography.Text type="secondary">{c.dtype}</Typography.Text></span>,
-          selectable: false,
-          isLeaf: true,
+    ? [
+        ...views.filter((v) => match(v.name)).map((v) => ({
+          key: `view:${v.name}`,
+          title: v.name,
+          children: colLeaves(v.name, v.columns),
         })),
-      }))
+        ...(marketTables.length
+          ? [{
+              key: 'grp:market',
+              title: <Typography.Text strong>采集数据(market.*)</Typography.Text>,
+              selectable: false,
+              children: marketTables.filter((t) => match(t.name)).map((t) => ({
+                key: `mkt:${t.name}`,
+                title: t.name.replace(/^market\./, ''),
+                children: colLeaves(t.name, t.columns),
+              })),
+            }]
+          : []),
+      ]
     : databases.filter((d) => match(d) || (tablesByDb[d] ?? []).some(match)).map((d) => ({
         key: `db:${d}`,
         title: d,
@@ -82,6 +100,7 @@ export default function Query() {
     const k = keys[0]
     if (!k) return
     if (k.startsWith('view:')) setSql(`select * from "${k.slice(5)}" limit 100`)
+    if (k.startsWith('mkt:')) setSql(`select * from ${k.slice(4)} limit 100`)
     if (k.startsWith('tbl:')) setSql(`select * from ${k.slice(4)} limit 100`)
   }
 
@@ -190,6 +209,7 @@ export default function Query() {
             <Tree
               blockNode
               treeData={treeData}
+              defaultExpandedKeys={['grp:market']}
               onSelect={onTreeSelect}
               loadData={engine === 'duckdb' ? undefined
                 : (node) => loadTables(node.key.slice(3))}
