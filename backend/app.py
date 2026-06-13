@@ -150,9 +150,13 @@ def _mount_frontend(app: FastAPI) -> None:
     if (dist / "assets").exists():
         app.mount("/assets", StaticFiles(directory=dist / "assets"), name="assets")
 
+    # index.html 不缓存(否则部署后浏览器用旧 index、指向旧 bundle 哈希,页面永不更新);
+    # /assets 下是内容哈希文件名,天然可长缓存。
+    _no_cache = {"Cache-Control": "no-cache, no-store, must-revalidate"}
+
     @app.get("/{full_path:path}", include_in_schema=False)
     def spa(full_path: str):
         file = dist / full_path
         if full_path and file.is_file():
             return FileResponse(file)
-        return FileResponse(dist / "index.html")
+        return FileResponse(dist / "index.html", headers=_no_cache)

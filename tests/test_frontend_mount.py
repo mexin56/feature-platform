@@ -25,3 +25,5 @@ def test_spa_root_returns_html(tmp_path):
         resp = client.get("/")
         assert resp.status_code == 200
         assert "text/html" in resp.headers.get("content-type", "")
+        # index.html 必须 no-cache,否则部署后浏览器用旧 index 指向旧 bundle,页面不更新
+        assert "no-cache" in resp.headers.get("cache-control", "")
