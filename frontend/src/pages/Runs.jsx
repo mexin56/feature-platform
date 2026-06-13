@@ -1,10 +1,12 @@
 import {
+  CheckCircleOutlined,
   EyeOutlined,
   ReloadOutlined,
   StopOutlined,
 } from '@ant-design/icons'
 import {
   Button,
+  Popconfirm,
   Select,
   Space,
   Table,
@@ -13,7 +15,7 @@ import {
   message,
 } from 'antd'
 import { useEffect, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 
 import { api } from '../api.js'
 import StateTag from '../components/StateTag.jsx'
@@ -28,62 +30,67 @@ const RUN_TYPE_COLOR = {
 
 export default function Runs() {
   const [workflows, setWorkflows] = useState([])
-  const [selectedWid, setSelectedWid] = useState(null)
+  const [selectedWid, setSelectedWid] = useState(null)   // null = 全部
   const [runs, setRuns] = useState([])
   const [loadingWf, setLoadingWf] = useState(false)
   const [loadingRuns, setLoadingRuns] = useState(false)
   const [stateFilter, setStateFilter] = useState(null)
   const [typeFilter, setTypeFilter] = useState(null)
-  const [actionBusy, setActionBusy] = useState({}) // rid → bool
+  const [actionBusy, setActionBusy] = useState({})        // rid → bool
   const navigate = useNavigate()
   const intervalRef = useRef(null)
 
-  // Load workflow list once on mount
+  // Load workflow list once on mount (no auto-select)
   useEffect(() => {
     setLoadingWf(true)
     api.get('/api/workflows')
-      .then((list) => {
-        setWorkflows(list)
-        if (list.length > 0) setSelectedWid(list[0].id)
-      })
+      .then((list) => setWorkflows(list))
       .catch(() => {})
       .finally(() => setLoadingWf(false))
   }, [])
 
-  const fetchRuns = (wid) => {
-    if (!wid) return
-    api.get(`/api/workflows/${wid}/runs`)
+  // Build URL for GET /api/runs with current filters
+  const buildRunsUrl = (wid, state, type) => {
+    const params = new URLSearchParams()
+    if (wid)   params.set('workflow_id', wid)
+    if (state) params.set('state', state)
+    if (type)  params.set('run_type', type)
+    const qs = params.toString()
+    return qs ? `/api/runs?${qs}` : '/api/runs'
+  }
+
+  // Fetch runs with current filter state (used by polling too)
+  const fetchRuns = (wid, state, type) => {
+    api.get(buildRunsUrl(wid, state, type))
       .then(setRuns)
       .catch(() => {})
   }
 
-  // Fetch runs when selected workflow changes
+  // Fetch runs whenever any filter changes
   useEffect(() => {
-    if (!selectedWid) return
     setLoadingRuns(true)
-    api.get(`/api/workflows/${selectedWid}/runs`)
+    api.get(buildRunsUrl(selectedWid, stateFilter, typeFilter))
       .then(setRuns)
       .catch(() => {})
       .finally(() => setLoadingRuns(false))
-  }, [selectedWid])
+  }, [selectedWid, stateFilter, typeFilter])
 
-  // 5s polling — skip when tab hidden
+  // 5s polling — rebuild timer on filter change; skip when tab hidden
   useEffect(() => {
     if (intervalRef.current) clearInterval(intervalRef.current)
-    if (!selectedWid) return
     intervalRef.current = setInterval(() => {
       if (document.hidden) return
-      fetchRuns(selectedWid)
+      fetchRuns(selectedWid, stateFilter, typeFilter)
     }, 5000)
     return () => clearInterval(intervalRef.current)
-  }, [selectedWid])
+  }, [selectedWid, stateFilter, typeFilter])
 
   const handleStop = async (rid) => {
     setActionBusy((b) => ({ ...b, [rid]: true }))
     try {
       await api.post(`/api/runs/${rid}/stop`)
       message.success('实例已终止')
-      fetchRuns(selectedWid)
+      fetchRuns(selectedWid, stateFilter, typeFilter)
     } catch {
       // shown by api.js
     } finally {
@@ -96,7 +103,7 @@ export default function Runs() {
     try {
       await api.post(`/api/runs/${rid}/retry`)
       message.success('实例已重跑')
-      fetchRuns(selectedWid)
+      fetchRuns(selectedWid, stateFilter, typeFilter)
     } catch {
       // shown by api.js
     } finally {
@@ -104,18 +111,32 @@ export default function Runs() {
     }
   }
 
-  // Filter runs client-side
-  const filtered = runs.filter((r) => {
-    if (stateFilter && r.state !== stateFilter) return false
-    if (typeFilter && r.run_type !== typeFilter) return false
-    return true
-  })
+  const handleMarkSuccess = async (rid) => {
+    setActionBusy((b) => ({ ...b, [rid]: true }))
+    try {
+      await api.post(`/api/runs/${rid}/mark-success`)
+      message.success('实例已强制成功')
+      fetchRuns(selectedWid, stateFilter, typeFilter)
+    } catch {
+      // shown by api.js
+    } finally {
+      setActionBusy((b) => ({ ...b, [rid]: false }))
+    }
+  }
 
   const columns = [
     {
       title: 'ID',
       dataIndex: 'id',
       width: 60,
+    },
+    {
+      title: '工作流',
+      dataIndex: 'workflow_name',
+      width: 160,
+      render: (name, row) => (
+        <Link to={`/workflows/${row.workflow_id}`}>{name ?? row.workflow_id ?? '—'}</Link>
+      ),
     },
     {
       title: '类型',
@@ -154,7 +175,7 @@ export default function Runs() {
     },
     {
       title: '操作',
-      width: 170,
+      width: 230,
       render: (_, row) => (
         <Space size="small">
           <Button
@@ -185,6 +206,22 @@ export default function Runs() {
               重跑
             </Button>
           )}
+          {(row.state === 'failed' || row.state === 'stopped') && (
+            <Popconfirm
+              title="将该实例所有未成功任务置为成功?"
+              onConfirm={() => handleMarkSuccess(row.id)}
+              okText="确认"
+              cancelText="取消"
+            >
+              <Button
+                size="small"
+                icon={<CheckCircleOutlined />}
+                loading={actionBusy[row.id]}
+              >
+                强制成功
+              </Button>
+            </Popconfirm>
+          )}
         </Space>
       ),
     },
@@ -195,18 +232,19 @@ export default function Runs() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
         <div>
           <Typography.Title level={4} style={{ margin: 0 }}>实例监控</Typography.Title>
-          <Typography.Text type="secondary">按工作流查看运行实例,每 5 秒自动刷新</Typography.Text>
+          <Typography.Text type="secondary">查看全部运行实例,每 5 秒自动刷新</Typography.Text>
         </div>
       </div>
 
       <Space style={{ marginBottom: 12 }} wrap>
         <Select
           style={{ width: 220 }}
-          placeholder="选择工作流"
+          placeholder="全部工作流"
+          allowClear
           loading={loadingWf}
           value={selectedWid}
           onChange={(v) => {
-            setSelectedWid(v)
+            setSelectedWid(v ?? null)
             setRuns([])
           }}
           options={workflows.map((w) => ({ label: w.name, value: w.id }))}
@@ -218,7 +256,7 @@ export default function Runs() {
           placeholder="状态筛选"
           allowClear
           value={stateFilter}
-          onChange={setStateFilter}
+          onChange={(v) => setStateFilter(v ?? null)}
           options={[
             { label: '运行中', value: 'running' },
             { label: '成功', value: 'success' },
@@ -232,7 +270,7 @@ export default function Runs() {
           placeholder="类型筛选"
           allowClear
           value={typeFilter}
-          onChange={setTypeFilter}
+          onChange={(v) => setTypeFilter(v ?? null)}
           options={[
             { label: '手动', value: 'manual' },
             { label: '调度', value: 'scheduled' },
@@ -244,11 +282,11 @@ export default function Runs() {
       <Table
         rowKey="id"
         loading={loadingRuns}
-        dataSource={filtered}
+        dataSource={runs}
         columns={columns}
         pagination={{ pageSize: 20, hideOnSinglePage: true }}
         size="small"
-        locale={{ emptyText: selectedWid ? '暂无实例' : '请先选择工作流' }}
+        locale={{ emptyText: '暂无实例' }}
       />
     </div>
   )
