@@ -74,3 +74,10 @@ pytest 全绿;真实运行一次采集工作流后,查询页 duckdb 引擎能 `s
 - 解析:resolve_dataset(key, settings) = CATALOG 优先,否则 sqlite3 直读 meta.db custom_datasets(data_collect 子进程无 ORM 会话);datasets 列表接口合并返回 custom:true+id。
 - API:POST/PUT/DELETE /api/datasets/custom(developer+,key 冲突校验含内置目录);POST /api/datasets/custom/test(真实拉取预览,行数截 5);seed-workflow 接受自定义 key。
 - 前端:采集页「新增自定义数据集」Drawer(slug 校验+目标表预览+按类型条件表单+测试拉取预览表),custom 行带「自定义」Tag 与编辑/删除。
+
+## Phase 5.2 增量:内置数据集可编辑(覆盖模式,2026-06-13 用户确认)
+- 复用 CustomDataset 表 + 新增列 is_override(bool 默认 False)。override 行 key=内置 key、is_override=True。
+- resolve 优先级(data_collect 插件):先 resolve_custom(key)命中(override/custom)→ 用之;否则 CATALOG。即用户配置永远优先于内置。
+- GET /api/datasets 每行新增:editable=true;custom(纯自定义)/overridden(内置有覆盖);collector_type+config(自定义/override=自身,内置无覆盖=null);edit_template{collector_type,config,mode}(仅内置,首次编辑预填:tushare→tushare_api 预填 api_name=dataset、其余→空 http_json 模板);id(自定义/override 行有)。
+- POST /custom:key 命中 CATALOG → 建 override(is_override=True);已存在同 key custom 行 → 400 提示用编辑。DELETE /custom/{id} 删 override = 恢复默认。
+- 前端:每行操作列编辑按钮(全部行);内置 overridden 行显示「已覆盖」Tag + 恢复默认(DELETE);编辑内置打开 Drawer(source/dataset 锁定,collector_type/config 预填 override 或 edit_template),保存走 POST(建覆盖)/PUT(改覆盖)。
