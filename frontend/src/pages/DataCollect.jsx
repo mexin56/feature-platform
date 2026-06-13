@@ -227,7 +227,10 @@ function CustomDatasetDrawer({ open, editRecord, onClose, onSuccess }) {
     : '(请先填写来源和数据集标识)'
 
   const testResultColumns = testResult
-    ? testResult.columns.map((c) => ({ title: c, dataIndex: c, key: c, ellipsis: true, width: 120 }))
+    ? testResult.columns.map((c, ci) => ({
+        title: c, dataIndex: ci, key: ci, ellipsis: true, width: 120,
+        render: (v) => (v === null || v === undefined ? '∅' : String(v)),
+      }))
     : []
 
   return (
@@ -435,7 +438,10 @@ function CustomDatasetDrawer({ open, editRecord, onClose, onSuccess }) {
             <Table
               size="small"
               columns={testResultColumns}
-              dataSource={testResult.rows.map((r, i) => ({ ...r, __key: i }))}
+              dataSource={testResult.rows.map((r, i) => ({
+                ...Object.fromEntries(r.map((v, ci) => [ci, v])), __key: i,
+              }))}
+              rowKey="__key"
               rowKey="__key"
               pagination={false}
               scroll={{ x: 'max-content' }}
