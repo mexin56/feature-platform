@@ -1,12 +1,19 @@
 import {
   DatabaseOutlined,
+  DeleteOutlined,
+  EditOutlined,
+  PlusOutlined,
 } from '@ant-design/icons'
 import {
   Button,
+  Divider,
+  Drawer,
   Form,
   Input,
   InputNumber,
   Modal,
+  Popconfirm,
+  Radio,
   Select,
   Space,
   Switch,
@@ -56,6 +63,391 @@ function defaultWorkflowName() {
   return `数据采集_${ymd}`
 }
 
+/* ── JSON TextArea 解析辅助 ── */
+function parseJsonField(value, fieldLabel) {
+  if (!value || value.trim() === '') return {}
+  try {
+    return JSON.parse(value)
+  } catch {
+    throw new Error(`「${fieldLabel}」不是合法 JSON`)
+  }
+}
+
+/* ── 自定义数据集 Drawer ── */
+function CustomDatasetDrawer({ open, editRecord, onClose, onSuccess }) {
+  const [form] = Form.useForm()
+  const [busy, setBusy] = useState(false)
+  const [testBusy, setTestBusy] = useState(false)
+  const [collectorType, setCollectorType] = useState('http_json')
+  const [mode, setMode] = useState('snapshot')
+  const [testResult, setTestResult] = useState(null)
+  const [testSymbols, setTestSymbols] = useState('000001')
+  const [sourceVal, setSourceVal] = useState('')
+  const [datasetVal, setDatasetVal] = useState('')
+
+  const isEdit = !!editRecord
+
+  useEffect(() => {
+    if (!open) return
+    if (isEdit) {
+      const cfg = editRecord.config ?? {}
+      const ct = editRecord.collector_type ?? 'http_json'
+      setCollectorType(ct)
+      setMode(editRecord.mode ?? 'snapshot')
+      setSourceVal(editRecord.source ?? '')
+      setDatasetVal(editRecord.dataset ?? '')
+      setTestResult(null)
+
+      const fieldsToSet = {
+        source: editRecord.source,
+        dataset: editRecord.dataset,
+        name: editRecord.name,
+        description: editRecord.description ?? editRecord.desc ?? '',
+        mode: editRecord.mode ?? 'snapshot',
+        collector_type: ct,
+      }
+
+      if (ct === 'http_json') {
+        fieldsToSet.url = cfg.url ?? ''
+        fieldsToSet.method = cfg.method ?? 'GET'
+        fieldsToSet.headers = cfg.headers && Object.keys(cfg.headers).length ? JSON.stringify(cfg.headers, null, 2) : ''
+        fieldsToSet.params = cfg.params && Object.keys(cfg.params).length ? JSON.stringify(cfg.params, null, 2) : ''
+        fieldsToSet.body = cfg.body ? JSON.stringify(cfg.body, null, 2) : ''
+        fieldsToSet.records_path = cfg.records_path ?? ''
+        fieldsToSet.field_map = cfg.field_map && Object.keys(cfg.field_map).length ? JSON.stringify(cfg.field_map, null, 2) : ''
+      } else {
+        fieldsToSet.api_name = cfg.api_name ?? ''
+        fieldsToSet.tushare_params = cfg.params && Object.keys(cfg.params).length ? JSON.stringify(cfg.params, null, 2) : ''
+        fieldsToSet.fields = cfg.fields ?? ''
+      }
+      form.setFieldsValue(fieldsToSet)
+    } else {
+      form.resetFields()
+      setCollectorType('http_json')
+      setMode('snapshot')
+      setSourceVal('')
+      setDatasetVal('')
+      setTestResult(null)
+      form.setFieldsValue({ collector_type: 'http_json', mode: 'snapshot', method: 'GET' })
+    }
+  }, [open, editRecord, isEdit, form])
+
+  const buildConfig = (values) => {
+    const ct = values.collector_type
+    if (ct === 'http_json') {
+      const headers = parseJsonField(values.headers, 'headers')
+      const params = parseJsonField(values.params, 'params')
+      const bodyVal = values.method === 'POST' ? parseJsonField(values.body, 'body') : undefined
+      const field_map = parseJsonField(values.field_map, 'field_map')
+      const cfg = {
+        url: values.url,
+        method: values.method ?? 'GET',
+        headers,
+        params,
+        records_path: values.records_path ?? '',
+        field_map,
+      }
+      if (values.method === 'POST') cfg.body = bodyVal ?? null
+      return cfg
+    } else {
+      const params = parseJsonField(values.tushare_params, 'params')
+      return {
+        api_name: values.api_name,
+        params,
+        fields: values.fields ?? '',
+      }
+    }
+  }
+
+  const handleTest = async () => {
+    let values
+    try { values = await form.validateFields() } catch { return }
+    let config
+    try { config = buildConfig(values) } catch (e) { message.error(e.message); return }
+
+    const symbols = (testSymbols ?? '').split(/[\s,]+/).map((s) => s.trim()).filter(Boolean)
+    const body = {
+      collector_type: values.collector_type,
+      config,
+      mode: values.mode,
+      symbols: symbols.length ? symbols : ['000001'],
+    }
+
+    setTestBusy(true)
+    setTestResult(null)
+    try {
+      const r = await api.post('/api/datasets/custom/test', body)
+      setTestResult(r)
+    } catch {
+      // error already shown by api.js
+    } finally {
+      setTestBusy(false)
+    }
+  }
+
+  const handleSave = async () => {
+    let values
+    try { values = await form.validateFields() } catch { return }
+    let config
+    try { config = buildConfig(values) } catch (e) { message.error(e.message); return }
+
+    setBusy(true)
+    try {
+      if (isEdit) {
+        await api.put(`/api/datasets/custom/${editRecord.id}`, {
+          name: values.name,
+          description: values.description ?? '',
+          mode: values.mode,
+          collector_type: values.collector_type,
+          config,
+        })
+        message.success('自定义数据集已更新')
+      } else {
+        await api.post('/api/datasets/custom', {
+          source: values.source,
+          dataset: values.dataset,
+          name: values.name,
+          description: values.description ?? '',
+          mode: values.mode,
+          collector_type: values.collector_type,
+          config,
+        })
+        message.success('自定义数据集已创建')
+      }
+      onSuccess()
+    } catch {
+      // error shown by api.js
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const previewTable = sourceVal && datasetVal
+    ? `ods_${sourceVal}_${datasetVal}`
+    : '(请先填写来源和数据集标识)'
+
+  const testResultColumns = testResult
+    ? testResult.columns.map((c) => ({ title: c, dataIndex: c, key: c, ellipsis: true, width: 120 }))
+    : []
+
+  return (
+    <Drawer
+      title={isEdit ? '编辑自定义数据集' : '新增自定义数据集'}
+      open={open}
+      onClose={onClose}
+      width={720}
+      destroyOnClose
+      extra={
+        <Space>
+          <Button onClick={handleTest} loading={testBusy}>测试拉取</Button>
+          <Button type="primary" onClick={handleSave} loading={busy}>保存</Button>
+        </Space>
+      }
+    >
+      <Form form={form} layout="vertical">
+        {/* slug 字段 */}
+        <Form.Item label="来源标识 (source)" required style={{ marginBottom: 8 }}>
+          <Form.Item
+            name="source"
+            noStyle
+            rules={[
+              { required: true, message: '请输入来源标识' },
+              { pattern: /^[a-z0-9_]{2,32}$/, message: '须为 ^[a-z0-9_]{2,32}$' },
+            ]}
+          >
+            <Input
+              placeholder="如 my_source（^[a-z0-9_]{2,32}$）"
+              disabled={isEdit}
+              onChange={(e) => setSourceVal(e.target.value)}
+              style={{ width: '100%' }}
+            />
+          </Form.Item>
+        </Form.Item>
+
+        <Form.Item label="数据集标识 (dataset)" required style={{ marginBottom: 8 }}>
+          <Form.Item
+            name="dataset"
+            noStyle
+            rules={[
+              { required: true, message: '请输入数据集标识' },
+              { pattern: /^[a-z0-9_]{2,32}$/, message: '须为 ^[a-z0-9_]{2,32}$' },
+            ]}
+          >
+            <Input
+              placeholder="如 daily_price（^[a-z0-9_]{2,32}$）"
+              disabled={isEdit}
+              onChange={(e) => setDatasetVal(e.target.value)}
+              style={{ width: '100%' }}
+            />
+          </Form.Item>
+        </Form.Item>
+
+        <Form.Item label="目标表预览">
+          <Typography.Text code>{previewTable}</Typography.Text>
+        </Form.Item>
+
+        <Form.Item
+          name="name"
+          label="名称"
+          rules={[{ required: true, message: '请输入名称' }]}
+        >
+          <Input placeholder="数据集中文名称" />
+        </Form.Item>
+
+        <Form.Item name="description" label="说明">
+          <Input.TextArea rows={2} placeholder="可选说明" />
+        </Form.Item>
+
+        <Form.Item name="mode" label="采集模式">
+          <Radio.Group onChange={(e) => setMode(e.target.value)}>
+            <Radio value="snapshot">快照 (snapshot)</Radio>
+            <Radio value="per_symbol">逐股 (per_symbol)</Radio>
+          </Radio.Group>
+        </Form.Item>
+
+        <Form.Item name="collector_type" label="采集器类型">
+          <Radio.Group onChange={(e) => setCollectorType(e.target.value)}>
+            <Radio value="http_json">HTTP JSON</Radio>
+            <Radio value="tushare_api">tushare 通用</Radio>
+          </Radio.Group>
+        </Form.Item>
+
+        <Divider style={{ margin: '12px 0' }} />
+
+        {collectorType === 'http_json' && (
+          <>
+            <Form.Item
+              name="url"
+              label="URL"
+              rules={[{ required: true, message: '请输入 URL' }]}
+              extra="支持占位符：{dt}（YYYYMMDD）、{dt_nodash}（YYYYMMDD 无连字符）、{symbol}"
+            >
+              <Input.TextArea rows={2} placeholder="https://example.com/api?date={dt}" />
+            </Form.Item>
+
+            <Form.Item name="method" label="Method">
+              <Select style={{ width: 120 }} options={[{ value: 'GET' }, { value: 'POST' }]} />
+            </Form.Item>
+
+            <Form.Item
+              name="headers"
+              label="Headers（JSON）"
+              extra="解析失败时会提示错误，留空视为 {}"
+            >
+              <Input.TextArea rows={3} placeholder='{"Authorization": "Bearer token"}' />
+            </Form.Item>
+
+            <Form.Item
+              name="params"
+              label="Query Params（JSON）"
+              extra="留空视为 {}"
+            >
+              <Input.TextArea rows={3} placeholder='{"page": 1}' />
+            </Form.Item>
+
+            {mode === 'snapshot' ? null : null /* body shown by method watch below */}
+            <Form.Item
+              noStyle
+              shouldUpdate={(prev, cur) => prev.method !== cur.method}
+            >
+              {({ getFieldValue }) =>
+                getFieldValue('method') === 'POST' ? (
+                  <Form.Item
+                    name="body"
+                    label="Request Body（JSON）"
+                    extra="留空视为 null"
+                  >
+                    <Input.TextArea rows={3} placeholder='{"key": "value"}' />
+                  </Form.Item>
+                ) : null
+              }
+            </Form.Item>
+
+            <Form.Item
+              name="records_path"
+              label="Records Path"
+              extra="JSON 响应中数组的点路径，如 data.list；留空取响应根节点"
+            >
+              <Input placeholder="data.list" />
+            </Form.Item>
+
+            <Form.Item
+              name="field_map"
+              label="Field Map（JSON）"
+              extra="列名 → JSON 键 的映射，留空则取首条记录所有字段"
+            >
+              <Input.TextArea rows={3} placeholder='{"close": "closePrice", "volume": "vol"}' />
+            </Form.Item>
+          </>
+        )}
+
+        {collectorType === 'tushare_api' && (
+          <>
+            <Form.Item
+              name="api_name"
+              label="API 名称"
+              rules={[{ required: true, message: '请输入 tushare API 名称' }]}
+            >
+              <Input placeholder="daily / fina_indicator / …" />
+            </Form.Item>
+
+            <Form.Item
+              name="tushare_params"
+              label="Params（JSON）"
+              extra="逐股模式下 {symbol} 占位符会自动代入归一化 ts_code，留空视为 {}"
+            >
+              <Input.TextArea rows={3} placeholder='{"trade_date": "{dt}"}' />
+            </Form.Item>
+
+            <Form.Item
+              name="fields"
+              label="Fields（逗号分隔）"
+              extra="留空则取全部字段"
+            >
+              <Input placeholder="ts_code,trade_date,close,vol" />
+            </Form.Item>
+          </>
+        )}
+
+        {/* 测试拉取区 */}
+        <Divider style={{ margin: '12px 0' }}>测试拉取</Divider>
+        <Space style={{ marginBottom: 12 }} wrap>
+          {mode === 'per_symbol' && (
+            <Form.Item label="测试股票代码（逗号/空格分隔）" style={{ marginBottom: 0 }}>
+              <Input
+                value={testSymbols}
+                onChange={(e) => setTestSymbols(e.target.value)}
+                style={{ width: 220 }}
+                placeholder="000001"
+              />
+            </Form.Item>
+          )}
+          <Form.Item style={{ marginBottom: 0 }}>
+            <Button onClick={handleTest} loading={testBusy}>执行测试</Button>
+          </Form.Item>
+        </Space>
+
+        {testResult && (
+          <div>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              共 {testResult.row_count} 行，展示前 {testResult.rows.length} 行
+            </Typography.Text>
+            <Table
+              size="small"
+              columns={testResultColumns}
+              dataSource={testResult.rows.map((r, i) => ({ ...r, __key: i }))}
+              rowKey="__key"
+              pagination={false}
+              scroll={{ x: 'max-content' }}
+              style={{ marginTop: 8 }}
+            />
+          </div>
+        )}
+      </Form>
+    </Drawer>
+  )
+}
+
 export default function DataCollect() {
   const navigate = useNavigate()
   const [datasets, setDatasets] = useState([])
@@ -79,6 +471,10 @@ export default function DataCollect() {
   const [tokenModalOpen, setTokenModalOpen] = useState(false)
   const [tokenBusy, setTokenBusy] = useState(false)
   const [tokenForm] = Form.useForm()
+
+  /* Custom dataset drawer */
+  const [drawerOpen, setDrawerOpen] = useState(false)
+  const [editRecord, setEditRecord] = useState(null)
 
   /* admin detection — read from localStorage via App auth (stored in closure) */
   const [isAdmin, setIsAdmin] = useState(false)
@@ -107,8 +503,8 @@ export default function DataCollect() {
       if (filterSource !== '__all__' && ds.source !== filterSource) return false
       if (filterMode !== '__all__' && ds.mode !== filterMode) return false
       if (kw && !ds.key.toLowerCase().includes(kw) && !ds.name.toLowerCase().includes(kw)
-        && !(ds.desc ?? '').toLowerCase().includes(kw)) return false
-      if (onlyAvailable && !ds.available) return false
+        && !(ds.desc ?? ds.description ?? '').toLowerCase().includes(kw)) return false
+      if (onlyAvailable && !ds.custom && !ds.available) return false
       return true
     })
   }, [datasets, filterSource, filterMode, filterKeyword, onlyAvailable])
@@ -193,14 +589,45 @@ export default function DataCollect() {
     }
   }
 
+  /* ── Delete custom dataset ── */
+  const handleDeleteCustom = async (record) => {
+    try {
+      await api.del(`/api/datasets/custom/${record.id}`)
+      message.success(`已删除数据集 ${record.name}`)
+      load()
+    } catch {
+      // error shown by api.js
+    }
+  }
+
+  /* ── Open drawer for new / edit ── */
+  const openNewDrawer = () => {
+    setEditRecord(null)
+    setDrawerOpen(true)
+  }
+
+  const openEditDrawer = (record) => {
+    setEditRecord(record)
+    setDrawerOpen(true)
+  }
+
+  const handleDrawerSuccess = () => {
+    setDrawerOpen(false)
+    setEditRecord(null)
+    load()
+  }
+
   /* ── Table columns ── */
   const columns = [
     {
       title: '数据集',
-      width: 220,
+      width: 240,
       render: (_, row) => (
         <Space direction="vertical" size={0}>
-          <Typography.Text strong style={{ fontSize: 13 }}>{row.name}</Typography.Text>
+          <Space size={4}>
+            <Typography.Text strong style={{ fontSize: 13 }}>{row.name}</Typography.Text>
+            {row.custom && <Tag color="purple" style={{ marginLeft: 2 }}>自定义</Tag>}
+          </Space>
           <Typography.Text type="secondary" style={{ fontSize: 11, fontFamily: 'monospace' }}>{row.key}</Typography.Text>
         </Space>
       ),
@@ -231,13 +658,15 @@ export default function DataCollect() {
     },
     {
       title: '说明',
-      dataIndex: 'desc',
       ellipsis: true,
-      render: (v) => (
-        <Tooltip title={v}>
-          <span>{v}</span>
-        </Tooltip>
-      ),
+      render: (_, row) => {
+        const v = row.desc ?? row.description ?? ''
+        return (
+          <Tooltip title={v}>
+            <span>{v}</span>
+          </Tooltip>
+        )
+      },
     },
     {
       title: '目标表',
@@ -262,15 +691,50 @@ export default function DataCollect() {
     },
     {
       title: '状态',
-      width: 100,
+      width: 80,
       render: (_, row) => {
-        if (row.available) {
+        if (row.custom || row.available) {
           return <Tag color="success">可用</Tag>
         }
         return (
           <Tooltip title={row.reason}>
             <Tag color="error">不可用</Tag>
           </Tooltip>
+        )
+      },
+    },
+    {
+      title: '操作',
+      width: 100,
+      render: (_, row) => {
+        if (!row.custom) return null
+        return (
+          <Space size={4}>
+            <Tooltip title="编辑">
+              <Button
+                type="text"
+                size="small"
+                icon={<EditOutlined />}
+                onClick={() => openEditDrawer(row)}
+              />
+            </Tooltip>
+            <Popconfirm
+              title="确认删除该自定义数据集？"
+              okText="删除"
+              okType="danger"
+              cancelText="取消"
+              onConfirm={() => handleDeleteCustom(row)}
+            >
+              <Tooltip title="删除">
+                <Button
+                  type="text"
+                  size="small"
+                  danger
+                  icon={<DeleteOutlined />}
+                />
+              </Tooltip>
+            </Popconfirm>
+          </Space>
         )
       },
     },
@@ -287,15 +751,24 @@ export default function DataCollect() {
             开源金融数据目录，调度入 market.duckdb，查询页/特征衍生可用 market.ods_* 访问
           </Typography.Text>
         </div>
-        {isAdmin && (
+        <Space>
           <Button
-            size="small"
-            icon={<DatabaseOutlined />}
-            onClick={openTokenModal}
+            type="primary"
+            icon={<PlusOutlined />}
+            onClick={openNewDrawer}
           >
-            tushare Token
+            新增自定义数据集
           </Button>
-        )}
+          {isAdmin && (
+            <Button
+              size="small"
+              icon={<DatabaseOutlined />}
+              onClick={openTokenModal}
+            >
+              tushare Token
+            </Button>
+          )}
+        </Space>
       </div>
 
       {/* Filters */}
@@ -348,7 +821,7 @@ export default function DataCollect() {
           type: 'checkbox',
           selectedRowKeys: selectedKeys,
           onChange: (keys) => setSelectedKeys(keys),
-          getCheckboxProps: (row) => ({ disabled: !row.available }),
+          getCheckboxProps: (row) => ({ disabled: row.custom ? false : !row.available }),
         }}
         locale={{ emptyText: '暂无数据集' }}
       />
@@ -376,6 +849,14 @@ export default function DataCollect() {
           生成采集工作流
         </Button>
       </div>
+
+      {/* Custom Dataset Drawer */}
+      <CustomDatasetDrawer
+        open={drawerOpen}
+        editRecord={editRecord}
+        onClose={() => { setDrawerOpen(false); setEditRecord(null) }}
+        onSuccess={handleDrawerSuccess}
+      />
 
       {/* tushare Token Modal */}
       <Modal
