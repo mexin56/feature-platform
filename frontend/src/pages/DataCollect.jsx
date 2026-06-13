@@ -1052,8 +1052,10 @@ export default function DataCollect() {
         </Button>
       </div>
 
-      {/* Custom Dataset Drawer */}
+      {/* Custom Dataset Drawer —— key 按所点行,强制每次整体重挂载,
+          避免 destroyOnClose+useForm 复用导致表单残留上一行的值 */}
       <CustomDatasetDrawer
+        key={editRecord ? editRecord.key : 'new'}
         open={drawerOpen}
         editRecord={editRecord}
         onClose={() => { setDrawerOpen(false); setEditRecord(null) }}
