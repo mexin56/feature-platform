@@ -269,3 +269,83 @@ class SystemSetting(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     key: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
     value: Mapped[str] = mapped_column(Text, default="")
+
+
+class Factor(Base):
+    """因子定义:SQL 模板,存储 formula_sql(DuckDB 表达式)。"""
+
+    __tablename__ = "factors"
+    __table_args__ = (UniqueConstraint("name", name="uq_factor_name"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    name_cn: Mapped[str] = mapped_column(String(64), nullable=False)
+    # price_volume / fundamental / industry / custom
+    category: Mapped[str] = mapped_column(String(32), nullable=False)
+    subcategory: Mapped[str] = mapped_column(String(32), default="")
+    description: Mapped[str] = mapped_column(Text, default="")
+    formula_sql: Mapped[str] = mapped_column(Text, nullable=False)
+    # cross_sectional=True → 按日横截面(含 PARTITION BY trade_date)
+    cross_sectional: Mapped[bool] = mapped_column(Boolean, default=True)
+    # direction: 1=higher_better, -1=lower_better(IC 符号对齐)
+    direction: Mapped[int] = mapped_column(Integer, default=1)
+    # required_tables: 逗号分隔的 market 表名(如 ods_tushare_daily,ods_tushare_daily_basic)
+    required_tables: Mapped[str] = mapped_column(String(255), default="ods_tushare_daily")
+    is_builtin: Mapped[bool] = mapped_column(Boolean, default=False)
+    author: Mapped[str] = mapped_column(String(64), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class FactorComputation(Base):
+    """因子批量计算记录。"""
+
+    __tablename__ = "factor_computations"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    factor_ids: Mapped[str] = mapped_column(Text, nullable=False)  # JSON list
+    start_date: Mapped[str] = mapped_column(String(10), nullable=False)
+    end_date: Mapped[str] = mapped_column(String(10), nullable=False)
+    universe: Mapped[str] = mapped_column(String(32), default="hs300")
+    status: Mapped[str] = mapped_column(String(16), default="pending")  # pending/running/done/failed
+    output_path: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    rows: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    error_msg: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class Strategy(Base):
+    """策略定义:因子组合+选股规则+回测参数。"""
+
+    __tablename__ = "strategies"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    project_id: Mapped[int | None] = mapped_column(ForeignKey("projects.id"), nullable=True)
+    description: Mapped[str] = mapped_column(Text, default="")
+    factor_weights_json: Mapped[str] = mapped_column(Text, nullable=False)  # {factor_id: weight}
+    top_n: Mapped[int] = mapped_column(Integer, default=30)
+    rebalance_freq: Mapped[str] = mapped_column(String(16), default="monthly")  # monthly/weekly/daily
+    weight_scheme: Mapped[str] = mapped_column(String(16), default="equal")  # equal/mcap/score
+    benchmark: Mapped[str] = mapped_column(String(32), default="hs300")
+    start_date: Mapped[str] = mapped_column(String(10), nullable=False)
+    end_date: Mapped[str] = mapped_column(String(10), nullable=False)
+    transaction_cost_bps: Mapped[int] = mapped_column(Integer, default=30)  # 万分之 x
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class BacktestResult(Base):
+    """回测结果记录。"""
+
+    __tablename__ = "backtest_results"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    strategy_id: Mapped[int] = mapped_column(ForeignKey("strategies.id"), nullable=False)
+    computation_id: Mapped[int | None] = mapped_column(
+        ForeignKey("factor_computations.id"), nullable=True)
+    metrics_json: Mapped[str] = mapped_column(Text, nullable=False)  # 绩效指标 JSON
+    returns_path: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    trades_path: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    status: Mapped[str] = mapped_column(String(16), default="pending")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

@@ -120,3 +120,25 @@ for _d, _n, _desc in _FIN:
 _reg("pro_bar_daily", "前复权日线(pro_bar)",
      "ts.pro_bar(api=pro, adj=qfq) 逐股日线,窗口默认 dt 前 30 天",
      "per_symbol", fetch_pro_bar_daily)
+
+
+def fetch_index_weight(args, ctx):
+    """沪深 300 等指数成分股权重:index_code 默认 000300.SH,参数 args.index_code 可改。"""
+    pro = _pro(ctx)
+    code = (args or {}).get("index_code", "000300.SH")
+    # trade_date: 参数可传;默认取 ctx 采集日期
+    td = c.nodash((args or {}).get("trade_date") or c.ctx_dt(ctx))
+    try:
+        df = pro.index_weight(index_code=code, trade_date=td)
+    except Exception:
+        # 部分 tushare 版本/权限可能不支持此接口,回退到 index_member
+        try:
+            df = pro.index_member(index_code=code, trade_date=td)
+        except Exception as e:
+            raise RuntimeError(
+                f"tushare index_weight/index_member 均失败(code={code}): {e}") from e
+    return c.df_to_table(df)
+
+
+_reg("index_weight", "指数成分权重", "pro.index_weight(index_code) 指数成分+权重",
+     "snapshot", fetch_index_weight)

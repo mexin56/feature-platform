@@ -70,6 +70,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app.include_router(datasets_router.router, prefix="/api")
 
+    from .routers import factor_research as factor_research_router
+
+    app.include_router(factor_research_router.router)
+
     from . import models  # noqa: F401  确保模型注册
 
     Base.metadata.create_all(engine)
@@ -81,6 +85,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     ensure_column(engine, "workflows", "sla_time", "VARCHAR(5)")
     ensure_column(engine, "custom_datasets", "is_override", "INTEGER DEFAULT 0")
     _seed_admin(app.state.sessionmaker)
+    _seed_factors(app.state.sessionmaker)
 
     _mount_frontend(app)
 
@@ -135,6 +140,17 @@ def _seed_admin(SessionLocal) -> None:
         if (db.scalar(select(func.count(User.id))) or 0) == 0:
             db.add(User(username="admin", password_hash=hash_password("admin123"), role="admin"))
             db.commit()
+
+
+def _seed_factors(SessionLocal) -> None:
+    """首次启动播种内置因子库。"""
+    from .services.factor_seed import seed_factors
+
+    count = seed_factors(SessionLocal)
+    if count:
+        import logging
+        logging.getLogger("feature-platform").info(
+            f"种子播入 {count} 个内置因子")
 
 
 def _mount_frontend(app: FastAPI) -> None:
