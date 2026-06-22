@@ -1,0 +1,957 @@
+<!DOCTYPE html>
+<!-- saved from url=(0036)file:///c%3A/Users/PC/plan-loop.html -->
+<html lang="zh-CN"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>程序开发项目 · 高质量计划循环 Plan Loop</title>
+<style>
+  :root{
+    --bg:#0b0e1a; --panel:rgba(255,255,255,.045); --panel2:rgba(255,255,255,.025);
+    --line:rgba(255,255,255,.09); --line2:rgba(255,255,255,.14);
+    --text:#eceef8; --muted:#98a0bd; --dim:#6b7394;
+    --good:#34d399; --warn:#fbbf24;
+    --grad:linear-gradient(90deg,#7dd3fc,#a78bfa 55%,#f0abfc);
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  html{scroll-behavior:smooth;}
+  body{
+    background:
+      radial-gradient(900px 520px at 82% -12%, rgba(124,108,255,.16), transparent 60%),
+      radial-gradient(720px 520px at -8% 18%, rgba(56,189,248,.10), transparent 60%),
+      radial-gradient(820px 620px at 55% 115%, rgba(244,114,182,.07), transparent 60%),
+      var(--bg);
+    color:var(--text); min-height:100vh;
+    font-family:"Segoe UI Variable Text","Segoe UI","Microsoft YaHei",-apple-system,sans-serif;
+    line-height:1.7; padding:40px 16px 90px; overflow-x:hidden;
+  }
+  ::selection{background:rgba(124,140,255,.35);}
+  ::-webkit-scrollbar{width:10px;}
+  ::-webkit-scrollbar-track{background:transparent;}
+  ::-webkit-scrollbar-thumb{background:#272d4a; border-radius:6px;}
+  ::-webkit-scrollbar-thumb:hover{background:#343c61;}
+
+  /* 背景流光 */
+  .blob{position:fixed; border-radius:50%; filter:blur(90px); opacity:.5; z-index:-1; pointer-events:none;}
+  .blob.b1{width:480px; height:480px; left:-140px; top:8%; background:rgba(80,90,220,.16); animation:drift1 26s ease-in-out infinite alternate;}
+  .blob.b2{width:420px; height:420px; right:-120px; top:46%; background:rgba(40,150,200,.13); animation:drift2 32s ease-in-out infinite alternate;}
+  @keyframes drift1{to{transform:translate(70px,80px) scale(1.12);}}
+  @keyframes drift2{to{transform:translate(-80px,-70px) scale(1.08);}}
+
+  .wrap{max-width:1100px; margin:0 auto;}
+
+  /* ---------- 头部 ---------- */
+  header{text-align:center; margin-bottom:6px; animation:rise .6s ease both;}
+  .kicker{
+    display:inline-flex; align-items:center; gap:8px; font-size:12.5px; letter-spacing:3px;
+    color:var(--muted); text-transform:uppercase; margin-bottom:14px;
+    border:1px solid var(--line); border-radius:99px; padding:6px 18px;
+    background:var(--panel2); backdrop-filter:blur(8px);
+  }
+  .kicker i{width:7px; height:7px; border-radius:50%; background:var(--grad); display:inline-block;
+    box-shadow:0 0 10px rgba(167,139,250,.8);}
+  header h1{
+    font-size:clamp(26px,4vw,38px); letter-spacing:1px; font-weight:700;
+    background:linear-gradient(92deg,#f2f4ff 10%,#b9c4ff 55%,#8fd8ff 95%);
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+  }
+  header h1 .en{font-size:.45em; font-weight:500; letter-spacing:4px; color:var(--dim);
+    -webkit-text-fill-color:var(--dim); margin-left:10px;}
+  header p.sub{color:var(--muted); margin:14px auto 0; max-width:740px; font-size:15px;}
+  header p.sub b{color:var(--text);}
+
+  .principles{display:flex; gap:10px; justify-content:center; flex-wrap:wrap; margin:22px 0 4px;}
+  .principles span{
+    background:var(--panel2); border:1px solid var(--line); border-radius:99px;
+    padding:6px 16px; font-size:13px; color:var(--muted); backdrop-filter:blur(8px);
+    transition:border-color .2s, transform .2s;
+  }
+  .principles span:hover{border-color:var(--line2); transform:translateY(-1px);}
+  .principles b{color:var(--text); font-weight:600;}
+
+  /* ---------- 示例项目开关与简介 ---------- */
+  .demo-bar{
+    display:flex; align-items:center; justify-content:center; gap:14px; flex-wrap:wrap;
+    margin:20px auto 0; animation:rise .6s .08s ease both;
+  }
+  .switch{display:inline-flex; align-items:center; gap:10px; cursor:pointer; user-select:none;
+    background:var(--panel); border:1px solid var(--line); border-radius:99px; padding:8px 18px 8px 12px;
+    backdrop-filter:blur(8px); transition:border-color .2s;}
+  .switch:hover{border-color:var(--line2);}
+  .switch input{display:none;}
+  .switch .track{
+    width:38px; height:21px; border-radius:99px; background:#2a3052; position:relative;
+    transition:background .25s; flex:none;
+  }
+  .switch .track::after{
+    content:""; position:absolute; top:2.5px; left:3px; width:16px; height:16px; border-radius:50%;
+    background:#aab2d4; transition:all .25s cubic-bezier(.5,1.6,.4,1);
+  }
+  .switch input:checked + .track{background:linear-gradient(90deg,#38bdf8,#a78bfa);}
+  .switch input:checked + .track::after{left:19px; background:#fff;}
+  .switch .lb{font-size:13.5px; color:var(--muted);}
+  .switch .lb b{color:var(--text);}
+
+  .demo-intro{
+    display:none; max-width:840px; margin:16px auto 0; border-radius:16px; padding:16px 22px;
+    background:linear-gradient(150deg, rgba(56,189,248,.08), rgba(167,139,250,.06) 60%, rgba(255,255,255,.02));
+    border:1px solid rgba(125,160,255,.22); backdrop-filter:blur(12px);
+    font-size:14px; color:#c5cce6; text-align:left;
+  }
+  .demo-intro.show{display:block; animation:rise .4s ease both;}
+  .demo-intro b{color:var(--text);}
+  .demo-intro .tag{
+    display:inline-block; font-size:11.5px; letter-spacing:2px; color:#8fd8ff;
+    border:1px solid rgba(125,211,252,.35); border-radius:6px; padding:1px 8px; margin-right:8px;
+  }
+
+  /* ---------- 循环图 ---------- */
+  .diagram-box{position:relative; max-width:540px; margin:26px auto 0; aspect-ratio:1/1; animation:rise .6s .12s ease both;}
+  .diagram-box svg{position:absolute; inset:0; width:100%; height:100%;}
+  .ring{fill:none; stroke:url(#ringGrad); stroke-width:1; stroke-dasharray:3.5 3.5;
+    animation:flow 40s linear infinite; opacity:.7;}
+  @keyframes flow{to{stroke-dashoffset:-560;}}
+
+  .hub-ring{
+    position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
+    width:37%; aspect-ratio:1/1; border-radius:50%; padding:5px;
+    background:conic-gradient(rgba(255,255,255,.07) 0deg, rgba(255,255,255,.07) 360deg);
+    transition:background .4s;
+  }
+  .center-hub{
+    width:100%; height:100%; border-radius:50%;
+    background:#11152add; backdrop-filter:blur(10px);
+    border:1px solid var(--line);
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    text-align:center; box-shadow:0 0 60px rgba(90,110,255,.14), inset 0 0 40px rgba(0,0,0,.3);
+  }
+  .center-hub .loop-num{font-size:12.5px; color:var(--muted); letter-spacing:1px;}
+  .center-hub .loop-num b{color:var(--text); font-size:14px;}
+  .center-hub .pct{font-size:clamp(24px,4.5vw,34px); font-weight:700; line-height:1.15;
+    background:var(--grad); -webkit-background-clip:text; background-clip:text; color:transparent;}
+  .center-hub .pct small{font-size:.45em;}
+  .center-hub .pct-label{font-size:11px; color:var(--dim); letter-spacing:2px;}
+
+  .node{
+    position:absolute; transform:translate(-50%,-50%);
+    width:min(102px,21vw); aspect-ratio:1/1; border-radius:50%;
+    background:radial-gradient(circle at 32% 26%, rgba(255,255,255,.10), rgba(255,255,255,.025) 60%), #141832;
+    border:1px solid var(--line2);
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    cursor:pointer; user-select:none; text-align:center;
+    transition:transform .22s cubic-bezier(.34,1.5,.5,1), border-color .2s, box-shadow .25s;
+    animation:nodeIn .55s ease both;
+  }
+  @keyframes nodeIn{from{opacity:0; transform:translate(-50%,-50%) scale(.6);} to{opacity:1; transform:translate(-50%,-50%) scale(1);}}
+  .node:hover{transform:translate(-50%,-50%) scale(1.09); border-color:var(--c);
+    box-shadow:0 8px 30px rgba(0,0,0,.4), 0 0 18px color-mix(in srgb, var(--c) 30%, transparent);}
+  .node .ico{font-size:clamp(17px,3.5vw,23px); line-height:1;}
+  .node .nm{font-size:clamp(11px,2.2vw,13px); font-weight:600; margin-top:4px; letter-spacing:.5px;}
+  .node .mini{width:44%; height:4px; background:rgba(255,255,255,.09); border-radius:2px; margin-top:6px; overflow:hidden;}
+  .node .mini i{display:block; height:100%; width:0; transition:width .35s; border-radius:2px;
+    background:linear-gradient(90deg, color-mix(in srgb, var(--c) 70%, white), var(--c));}
+  .node.active{
+    border-color:var(--c);
+    box-shadow:0 0 0 4px color-mix(in srgb, var(--c) 22%, transparent),
+               0 0 34px color-mix(in srgb, var(--c) 38%, transparent), 0 10px 30px rgba(0,0,0,.45);
+  }
+  .node.done::after{
+    content:"✓"; position:absolute; top:-2px; right:-2px;
+    width:25px; height:25px; border-radius:50%;
+    background:linear-gradient(135deg,#34d399,#10b981); color:#06281c;
+    font-weight:800; font-size:14px; display:flex; align-items:center; justify-content:center;
+    border:2.5px solid var(--bg); box-shadow:0 0 12px rgba(52,211,153,.5);
+  }
+  .step-arrow{position:absolute; transform:translate(-50%,-50%);
+    color:#56619c; font-size:14px; pointer-events:none; opacity:.85;}
+
+  /* ---------- 完成横幅 ---------- */
+  .banner{
+    display:none; margin:22px auto 0; max-width:660px; text-align:center;
+    background:linear-gradient(140deg, rgba(16,185,129,.13), rgba(56,189,248,.10));
+    border:1px solid rgba(52,211,153,.4); border-radius:18px; padding:22px 24px;
+    backdrop-filter:blur(12px); box-shadow:0 0 50px rgba(52,211,153,.12);
+  }
+  .banner.show{display:block; animation:pop .4s cubic-bezier(.3,1.5,.5,1);}
+  @keyframes pop{from{transform:scale(.93); opacity:0;} to{transform:scale(1); opacity:1;}}
+  .banner h3{font-size:19px; margin-bottom:6px;}
+  .banner p{color:var(--muted); font-size:14px; margin-bottom:14px;}
+
+  /* ---------- 阶段面板 ---------- */
+  .panel{
+    background:linear-gradient(165deg, var(--panel), var(--panel2));
+    border:1px solid var(--line); border-radius:20px; margin-top:30px; overflow:hidden;
+    backdrop-filter:blur(16px); box-shadow:0 24px 60px rgba(0,0,0,.35);
+    animation:rise .6s .18s ease both;
+  }
+  @keyframes rise{from{opacity:0; transform:translateY(14px);} to{opacity:1; transform:translateY(0);}}
+  .panel-inner.anim{animation:rise .35s ease both;}
+  .panel-head{
+    padding:24px 28px 18px; border-bottom:1px solid var(--line);
+    display:flex; align-items:center; gap:18px; flex-wrap:wrap; position:relative;
+  }
+  .panel-head::before{
+    content:""; position:absolute; inset:0 0 auto 0; height:3px;
+    background:linear-gradient(90deg, var(--c), color-mix(in srgb, var(--c) 20%, transparent) 70%, transparent);
+  }
+  .big-ico{
+    font-size:26px; width:58px; height:58px; flex:none; border-radius:16px;
+    display:flex; align-items:center; justify-content:center;
+    background:color-mix(in srgb, var(--c) 14%, transparent);
+    border:1px solid color-mix(in srgb, var(--c) 35%, transparent);
+    box-shadow:0 0 24px color-mix(in srgb, var(--c) 18%, transparent);
+  }
+  .panel-head h2{font-size:21px; letter-spacing:.5px;}
+  .panel-head h2 .step-no{color:var(--c); margin-right:6px;}
+  .panel-head h2 small{color:var(--dim); font-weight:500; font-size:12px; margin-left:10px; letter-spacing:3px;}
+  .panel-head .goal{color:var(--muted); font-size:14px; margin-top:4px; max-width:640px;}
+  .ph-ring{
+    margin-left:auto; width:62px; height:62px; flex:none; border-radius:50%;
+    display:grid; place-items:center;
+    background:conic-gradient(var(--c) 0deg, rgba(255,255,255,.08) 0deg);
+    transition:background .35s;
+  }
+  .ph-ring span{
+    width:50px; height:50px; border-radius:50%; background:#141832;
+    display:grid; place-items:center; font-size:13.5px; font-weight:700; color:var(--c);
+  }
+
+  /* 示例条 */
+  .example{
+    display:none; margin:20px 28px 0; border-radius:16px; padding:16px 20px 14px;
+    background:linear-gradient(155deg, color-mix(in srgb, var(--c) 9%, transparent), rgba(255,255,255,.015) 70%);
+    border:1px solid color-mix(in srgb, var(--c) 30%, transparent);
+  }
+  .example.show{display:block;}
+  .example .ex-head{
+    display:flex; align-items:center; gap:8px; font-size:13px; font-weight:700;
+    letter-spacing:1px; color:var(--c); margin-bottom:10px;
+  }
+  .example .ex-head .pill{
+    font-size:11px; font-weight:600; letter-spacing:1.5px; color:var(--c);
+    border:1px solid color-mix(in srgb, var(--c) 45%, transparent); border-radius:6px; padding:1px 8px;
+  }
+  .ex-grid{display:grid; grid-template-columns:1fr 1fr; gap:6px 22px;}
+  @media (max-width:760px){.ex-grid{grid-template-columns:1fr;}}
+  .ex-item{display:flex; gap:10px; font-size:13.5px; color:#c5cce6; padding:5px 0; align-items:baseline;}
+  .ex-item .t{
+    flex:none; font-size:11.5px; font-weight:700; color:var(--c); letter-spacing:1px;
+    background:color-mix(in srgb, var(--c) 13%, transparent); border-radius:6px; padding:2px 8px;
+    margin-top:2px;
+  }
+
+  .panel-body{display:grid; grid-template-columns:1.22fr 1fr;}
+  @media (max-width:840px){.panel-body{grid-template-columns:1fr;}}
+  .col{padding:22px 28px;}
+  .col + .col{border-left:1px solid var(--line);}
+  @media (max-width:840px){.col + .col{border-left:none; border-top:1px solid var(--line);}}
+  .col h4{
+    font-size:12px; text-transform:uppercase; letter-spacing:2.5px;
+    color:var(--dim); margin-bottom:14px; display:flex; align-items:center; gap:8px;
+  }
+  .col h4::before{content:""; width:18px; height:1.5px; background:var(--c); border-radius:1px; display:inline-block;}
+
+  .check{
+    display:flex; gap:12px; align-items:flex-start; padding:9px 12px; margin:0 -12px;
+    border-radius:12px; cursor:pointer; transition:background .15s; font-size:14.5px;
+  }
+  .check:hover{background:rgba(255,255,255,.045);}
+  .check input{
+    appearance:none; flex:none; width:20px; height:20px; margin-top:3px;
+    border:1.5px solid #4a5587; border-radius:7px; cursor:pointer; position:relative;
+    transition:all .18s cubic-bezier(.3,1.6,.5,1); background:rgba(255,255,255,.03);
+  }
+  .check input:hover{border-color:var(--c);}
+  .check input:checked{
+    background:linear-gradient(135deg, color-mix(in srgb, var(--c) 80%, white), var(--c));
+    border-color:transparent; transform:scale(1.06);
+    box-shadow:0 0 12px color-mix(in srgb, var(--c) 40%, transparent);
+  }
+  .check input:checked::after{
+    content:"✓"; position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+    color:#0d1018; font-size:13px; font-weight:800;
+  }
+  .check input:checked + span{color:var(--dim); text-decoration:line-through; text-decoration-color:#3d4569;}
+  .check span{transition:color .2s;}
+
+  .outputs{list-style:none; margin-bottom:24px;}
+  .outputs li{font-size:14px; padding:7px 0 7px 26px; position:relative; color:#c5cce6;}
+  .outputs li::before{content:"📄"; position:absolute; left:0; font-size:13px; opacity:.9;}
+
+  details.pitfalls{
+    background:rgba(251,113,133,.055); border:1px solid rgba(251,113,133,.22);
+    border-radius:14px; margin-bottom:22px; overflow:hidden; transition:border-color .2s;
+  }
+  details.pitfalls:hover{border-color:rgba(251,113,133,.4);}
+  details.pitfalls summary{
+    cursor:pointer; padding:13px 18px; font-size:14px; font-weight:600; color:#fda4af;
+    list-style:none; display:flex; align-items:center; gap:8px;
+  }
+  details.pitfalls summary::-webkit-details-marker{display:none;}
+  details.pitfalls summary::after{content:"▾"; margin-left:auto; transition:transform .25s; color:#b87a86;}
+  details.pitfalls[open] summary::after{transform:rotate(180deg);}
+  details.pitfalls ul{list-style:none; padding:0 18px 15px;}
+  details.pitfalls li{font-size:13.5px; color:#d9b9c2; padding:6px 0 6px 24px; position:relative;}
+  details.pitfalls li::before{content:"⚠"; position:absolute; left:0;}
+
+  .gate{
+    background:rgba(255,255,255,.03); border:1.5px dashed color-mix(in srgb, var(--c) 55%, transparent);
+    border-radius:14px; padding:18px; position:relative; overflow:hidden;
+  }
+  .gate::before{
+    content:""; position:absolute; inset:0;
+    background:radial-gradient(300px 120px at 20% 0%, color-mix(in srgb, var(--c) 8%, transparent), transparent);
+    pointer-events:none;
+  }
+  .gate h5{font-size:12px; letter-spacing:2.5px; color:var(--c); margin-bottom:8px;}
+  .gate p{font-size:14px; color:#c5cce6; margin-bottom:14px;}
+  .gate .hint{font-size:12.5px; color:var(--warn); margin-top:10px;}
+
+  .btn{
+    border:none; border-radius:12px; padding:11px 22px; font-size:14.5px; font-weight:600;
+    cursor:pointer; transition:all .18s; font-family:inherit; letter-spacing:.5px;
+  }
+  .btn:disabled{opacity:.35; cursor:not-allowed;}
+  .btn:not(:disabled):active{transform:scale(.97);}
+  .btn-gate{
+    background:linear-gradient(135deg, color-mix(in srgb, var(--c) 85%, white), var(--c));
+    color:#0d1018; box-shadow:0 4px 18px color-mix(in srgb, var(--c) 30%, transparent);
+  }
+  .btn-gate:not(:disabled):hover{filter:brightness(1.12); transform:translateY(-1px);}
+  .btn-gate.passed{background:linear-gradient(135deg,#4ade80,#10b981); color:#06281c;
+    box-shadow:0 4px 18px rgba(52,211,153,.3);}
+  .btn-ghost{
+    background:rgba(255,255,255,.04); border:1px solid var(--line2); color:var(--text);
+    backdrop-filter:blur(8px);
+  }
+  .btn-ghost:hover{border-color:#5a6499; background:rgba(255,255,255,.07); transform:translateY(-1px);}
+
+  .panel-foot{
+    display:flex; justify-content:space-between; padding:16px 28px;
+    border-top:1px solid var(--line); gap:10px; flex-wrap:wrap;
+  }
+  .kbd-hint{align-self:center; font-size:12px; color:var(--dim);}
+  .kbd-hint kbd{
+    border:1px solid var(--line2); border-bottom-width:2px; border-radius:5px;
+    padding:0 6px; font-family:inherit; font-size:11px; background:rgba(255,255,255,.04);
+  }
+
+  /* ---------- 总览 / 工具栏 ---------- */
+  .overview{display:grid; grid-template-columns:repeat(6,1fr); gap:12px; margin-top:30px; animation:rise .6s .22s ease both;}
+  @media (max-width:840px){.overview{grid-template-columns:repeat(3,1fr);}}
+  .ov-card{
+    background:var(--panel2); border:1px solid var(--line); border-radius:14px;
+    padding:14px 10px 12px; text-align:center; cursor:pointer; backdrop-filter:blur(8px);
+    transition:border-color .2s, transform .2s, box-shadow .2s;
+  }
+  .ov-card:hover{border-color:var(--c); transform:translateY(-3px);
+    box-shadow:0 12px 28px rgba(0,0,0,.3), 0 0 16px color-mix(in srgb, var(--c) 15%, transparent);}
+  .ov-card .t{font-size:13px; font-weight:600; margin:3px 0 9px;}
+  .ov-card .bar{height:5px; background:rgba(255,255,255,.08); border-radius:3px; overflow:hidden;}
+  .ov-card .bar i{display:block; height:100%; width:0; border-radius:3px; transition:width .35s;
+    background:linear-gradient(90deg, color-mix(in srgb, var(--c) 65%, white), var(--c));}
+  .ov-card .st{font-size:11.5px; color:var(--dim); margin-top:7px;}
+
+  .toolbar{display:flex; gap:12px; justify-content:center; margin-top:30px; flex-wrap:wrap;}
+
+  .howto{
+    background:var(--panel2); border:1px solid var(--line); border-radius:18px;
+    padding:24px 28px; margin-top:32px; font-size:14px; color:#c5cce6; backdrop-filter:blur(10px);
+  }
+  .howto h3{font-size:16px; margin-bottom:12px; letter-spacing:.5px;}
+  .howto ol{padding-left:22px;}
+  .howto li{margin:7px 0;}
+  .howto b{color:var(--text);}
+
+  #toast{
+    position:fixed; bottom:30px; left:50%; transform:translateX(-50%) translateY(90px);
+    background:rgba(35,42,75,.92); border:1px solid #4a5587; border-radius:12px;
+    padding:11px 26px; font-size:14px; z-index:99; backdrop-filter:blur(12px);
+    box-shadow:0 12px 40px rgba(0,0,0,.5);
+    transition:transform .35s cubic-bezier(.3,1.4,.5,1);
+  }
+  #toast.show{transform:translateX(-50%) translateY(0);}
+  footer{text-align:center; color:#4d5476; font-size:12.5px; margin-top:44px;}
+</style>
+</head>
+<body>
+<div class="blob b1"></div><div class="blob b2"></div>
+<div class="wrap">
+
+  <header>
+    <div class="kicker"><i></i>SOFTWARE DELIVERY PLAYBOOK</div>
+    <h1>程序开发项目 · 高质量计划循环<span class="en">PLAN LOOP</span></h1>
+    <p class="sub">每一圈循环交付一个<b>可演示的垂直切片</b>。六个阶段依次推进,每个阶段设有「门禁」——不达标不进入下一阶段;走完一圈即完成一次迭代,带着复盘的改进进入下一圈。</p>
+    <div class="principles">
+      <span>🎯 <b>门禁制</b>:达标才放行</span>
+      <span>🍰 <b>垂直切片</b>:每圈都可演示</span>
+      <span>🔥 <b>风险前置</b>:最不确定的最先做</span>
+      <span>🧾 <b>证据先于结论</b>:验证有记录</span>
+    </div>
+  </header>
+
+  <div class="demo-bar">
+    <label class="switch">
+      <input type="checkbox" id="exampleToggle">
+      <span class="track"></span>
+      <span class="lb">💡 示例项目:<b>LiteLink 短链接服务</b></span>
+    </label>
+  </div>
+  <div class="demo-intro show" id="demoIntro">
+    <span class="tag">案 例</span><b>LiteLink —— 团队内部短链接服务</b>:市场团队的活动长链接(带一长串 UTM 参数)难分享、又无法统计点击效果。目标是 <b>2 周内</b>交付「3 秒生成短链 + 实时点击统计」。技术栈:FastAPI + Redis + PostgreSQL。下方每个阶段都附有该项目的具体做法,演示这套循环如何落地。
+  </div>
+
+  <div class="diagram-box" id="diagram">
+    <svg viewBox="0 0 100 100">
+      <defs>
+        <lineargradient id="ringGrad" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stop-color="#7dd3fc"></stop><stop offset=".5" stop-color="#a78bfa"></stop><stop offset="1" stop-color="#f0abfc"></stop>
+        </lineargradient>
+      </defs>
+      <circle class="ring" cx="50" cy="50" r="38"></circle>
+    </svg>
+    <div class="hub-ring" id="hubRing" style="background: conic-gradient(from -90deg, rgb(125, 211, 252) 0deg, rgb(167, 139, 250) 0deg, rgba(255, 255, 255, 0.07) 0deg);">
+      <div class="center-hub">
+        <div class="loop-num">第 <b id="loopNum">1</b> 圈迭代</div>
+        <div class="pct"><span id="totalPct">0</span><small>%</small></div>
+        <div class="pct-label">总进度</div>
+      </div>
+    </div>
+  <div class="node" id="node-req" style="--c: #38bdf8; left: 50%; top: 12%; animation-delay: 0.15s;"><div class="ico">🧭</div><div class="nm">1. 需求澄清</div><div class="mini"><i style="width: 0%;"></i></div></div><div class="step-arrow" style="left: 69%; top: 17.091%; transform: translate(-50%, -50%) rotate(120deg);">➤</div><div class="node active" id="node-design" style="--c: #a78bfa; left: 82.909%; top: 31%; animation-delay: 0.22s;"><div class="ico">📐</div><div class="nm">2. 方案设计</div><div class="mini"><i style="width: 0%;"></i></div></div><div class="step-arrow" style="left: 88%; top: 50%; transform: translate(-50%, -50%) rotate(180deg);">➤</div><div class="node" id="node-plan" style="--c: #fbbf24; left: 82.909%; top: 69%; animation-delay: 0.29s;"><div class="ico">🗂️</div><div class="nm">3. 计划拆解</div><div class="mini"><i style="width: 0%;"></i></div></div><div class="step-arrow" style="left: 69%; top: 82.909%; transform: translate(-50%, -50%) rotate(240deg);">➤</div><div class="node" id="node-build" style="--c: #34d399; left: 50%; top: 88%; animation-delay: 0.36s;"><div class="ico">⚙️</div><div class="nm">4. 实现</div><div class="mini"><i style="width: 0%;"></i></div></div><div class="step-arrow" style="left: 31%; top: 82.909%; transform: translate(-50%, -50%) rotate(300deg);">➤</div><div class="node" id="node-verify" style="--c: #fb7185; left: 17.091%; top: 69%; animation-delay: 0.43s;"><div class="ico">🔍</div><div class="nm">5. 验证</div><div class="mini"><i style="width: 0%;"></i></div></div><div class="step-arrow" style="left: 12%; top: 50%; transform: translate(-50%, -50%) rotate(360deg);">➤</div><div class="node" id="node-retro" style="--c: #f97316; left: 17.091%; top: 31%; animation-delay: 0.5s;"><div class="ico">🪞</div><div class="nm">6. 复盘迭代</div><div class="mini"><i style="width: 0%;"></i></div></div><div class="step-arrow" style="left: 31%; top: 17.091%; transform: translate(-50%, -50%) rotate(420deg);">➤</div></div>
+
+  <div class="banner" id="banner">
+    <h3>🎉 本圈六个门禁全部通过!</h3>
+    <p>一次完整的迭代已交付。带着复盘中的改进项,开始下一圈循环吧。</p>
+    <button class="btn btn-gate" style="--c:#34d399" onclick="nextLoop()">🔄 开始第 <span id="nextLoopNum">2</span> 圈</button>
+  </div>
+
+  <div class="panel" id="panel" style="--c: #a78bfa;">
+  <div class="panel-inner anim">
+    <div class="panel-head">
+      <div class="big-ico">📐</div>
+      <div>
+        <h2><span class="step-no">02</span>方案设计<small>DESIGN</small></h2>
+        <div class="goal">在动手前比较多个方案、暴露技术风险。设计的产出是『能被挑战的决策』,不是漂亮的图。</div>
+      </div>
+      <div class="ph-ring" style="background:conic-gradient(#a78bfa 0deg, rgba(255,255,255,.08) 0deg)">
+        <span>0%</span>
+      </div>
+    </div>
+    <div class="example show">
+      <div class="ex-head"><span class="pill">示 例</span>LiteLink 短链接服务 · 本阶段怎么做</div>
+      <div class="ex-grid">
+        <div class="ex-item"><span class="t">候 选</span><span>方案 A:自增 ID + Base62 编码(简单、码短)。方案 B:URL 哈希截断 + 冲突重试(无状态但有冲突成本)。选 A —— 内部工具无需防遍历,简单优先。</span></div><div class="ex-item"><span class="t">架 构</span><span>Nginx → FastAPI → Redis(热点短码缓存)→ PostgreSQL(持久化 + 点击流水)。一页图讲清。</span></div><div class="ex-item"><span class="t">契 约</span><span>POST /api/links {url, alias?} → {code, short_url};GET /{code} → 301。</span></div><div class="ex-item"><span class="t">风险Spike</span><span>高并发跳转性能未知 → 第 1 天用 wrk 压测 Redis 缓存路径,目标 1000 QPS、P99 &lt; 50ms。</span></div>
+      </div>
+    </div>
+    <div class="panel-body">
+      <div class="col">
+        <h4>行动清单 CHECKLIST</h4>
+        
+          <label class="check">
+            <input type="checkbox" data-i="0">
+            <span>给出至少 2 个候选方案,对比复杂度 / 性能 / 可维护性 / 成本</span>
+          </label>
+          <label class="check">
+            <input type="checkbox" data-i="1">
+            <span>画出架构图与核心数据流(一页之内能讲清)</span>
+          </label>
+          <label class="check">
+            <input type="checkbox" data-i="2">
+            <span>定义模块边界与接口契约(API、数据结构)</span>
+          </label>
+          <label class="check">
+            <input type="checkbox" data-i="3">
+            <span>列出技术风险,为每个高风险项安排 Spike 快速验证</span>
+          </label>
+          <label class="check">
+            <input type="checkbox" data-i="4">
+            <span>明确非功能性方案:性能、安全、错误处理、可观测性</span>
+          </label>
+          <label class="check">
+            <input type="checkbox" data-i="5">
+            <span>做一次设计评审:请至少一个人来挑战你的方案</span>
+          </label>
+      </div>
+      <div class="col">
+        <h4>关键产出 OUTPUTS</h4>
+        <ul class="outputs"><li>方案对比表(≥2 个候选 + 权衡)</li><li>一页架构图 / 核心数据流</li><li>技术风险清单 + Spike 验证计划</li></ul>
+        <details class="pitfalls">
+          <summary>💣 常见陷阱(3)</summary>
+          <ul><li>直接采用第一个想到的方案(锚定效应)</li><li>为不存在的未来需求过度设计(违反 YAGNI)</li><li>风险拖到实现期才暴露 —— 高风险假设应最先用 Spike 验证</li></ul>
+        </details>
+        <div class="gate">
+          <h5>🚧 阶段门禁 GATE</h5>
+          <p>设计能在 10 分钟内向他人讲清并经受住提问;所有高风险假设都有验证计划。</p>
+          <button class="btn btn-gate " id="gateBtn" disabled="">
+            通过门禁 →
+          </button>
+          <div class="hint">⏳ 完成左侧全部清单后,门禁才会解锁</div>
+        </div>
+      </div>
+    </div>
+    <div class="panel-foot">
+      <button class="btn btn-ghost" id="prevBtn">← 上一阶段</button>
+      <span class="kbd-hint">提示:<kbd>←</kbd> <kbd>→</kbd> 切换阶段</span>
+      <button class="btn btn-ghost" id="nextBtn">下一阶段 →</button>
+    </div>
+  </div></div>
+
+  <div class="overview" id="overview">
+    <div class="ov-card" style="--c:#38bdf8" onclick="goPhase(0)">
+      <div>🧭</div>
+      <div class="t">需求澄清</div>
+      <div class="bar"><i style="width:0%"></i></div>
+      <div class="st">0%</div>
+    </div>
+    <div class="ov-card" style="--c:#a78bfa" onclick="goPhase(1)">
+      <div>📐</div>
+      <div class="t">方案设计</div>
+      <div class="bar"><i style="width:0%"></i></div>
+      <div class="st">0%</div>
+    </div>
+    <div class="ov-card" style="--c:#fbbf24" onclick="goPhase(2)">
+      <div>🗂️</div>
+      <div class="t">计划拆解</div>
+      <div class="bar"><i style="width:0%"></i></div>
+      <div class="st">0%</div>
+    </div>
+    <div class="ov-card" style="--c:#34d399" onclick="goPhase(3)">
+      <div>⚙️</div>
+      <div class="t">实现</div>
+      <div class="bar"><i style="width:0%"></i></div>
+      <div class="st">0%</div>
+    </div>
+    <div class="ov-card" style="--c:#fb7185" onclick="goPhase(4)">
+      <div>🔍</div>
+      <div class="t">验证</div>
+      <div class="bar"><i style="width:0%"></i></div>
+      <div class="st">0%</div>
+    </div>
+    <div class="ov-card" style="--c:#f97316" onclick="goPhase(5)">
+      <div>🪞</div>
+      <div class="t">复盘迭代</div>
+      <div class="bar"><i style="width:0%"></i></div>
+      <div class="st">0%</div>
+    </div></div>
+
+  <div class="toolbar">
+    <button class="btn btn-ghost" onclick="exportMarkdown()">📋 导出 Markdown 计划</button>
+    <button class="btn btn-ghost" onclick="resetLoop()">↩️ 重置本圈进度</button>
+    <button class="btn btn-ghost" onclick="resetAll()">🗑️ 全部重置</button>
+  </div>
+
+  <div class="howto">
+    <h3>📖 如何使用这个循环</h3>
+    <ol>
+      <li><b>点击环上的阶段节点</b>(或按 <b>← / →</b> 方向键)切换阶段,查看目标、行动清单、关键产出与常见陷阱。</li>
+      <li>打开顶部的<b>「示例项目」开关</b>,每个阶段会展示 LiteLink 短链服务在该阶段的具体做法,照着类比你自己的项目。</li>
+      <li>逐项完成<b>行动清单</b>并勾选 —— 进度自动保存在浏览器本地,关闭页面不丢失。</li>
+      <li>清单全部完成后,<b>「通过门禁」</b>按钮才会解锁。门禁是阶段的出口标准,逼自己诚实回答"真的达标了吗"。</li>
+      <li>六个门禁全部通过后,完成一圈迭代;点击<b>「开始下一圈」</b>清空勾选、圈数 +1,带着复盘的改进继续。</li>
+      <li>随时<b>「导出 Markdown 计划」</b>,把当前清单与进度粘贴到项目仓库的 PLAN.md 或任务系统中。</li>
+    </ol>
+  </div>
+
+  <footer>单文件离线可用 · 进度存储于浏览器 localStorage · 适用于个人项目与小团队迭代</footer>
+</div>
+<div id="toast">已复制</div>
+
+<script>
+const PHASES = [
+  {
+    id:"req", icon:"🧭", name:"需求澄清", en:"CLARIFY", color:"#38bdf8",
+    goal:"搞清楚『为谁、解决什么问题、做到什么程度算完成』。需求是问题与价值,不是功能列表。",
+    outputs:["一页需求文档(问题陈述 + 目标用户)","In / Out of Scope 范围清单","逐条可验证的验收标准"],
+    checklist:[
+      "用一句话写出:为谁、解决什么问题、做到什么程度算完成",
+      "列出明确的范围内(In Scope)与范围外(Out of Scope)",
+      "每条需求都有可验证的验收标准(Given / When / Then)",
+      "确认硬约束:时间、预算、技术栈、合规、性能指标",
+      "核心用户场景按价值排出优先级(P0 / P1 / P2)",
+      "与需求方书面确认共识,避免口头约定"
+    ],
+    pitfalls:[
+      "把『功能列表』当需求 —— 需求是问题与价值,不是实现方式",
+      "不写 Out of Scope,后期被无限加需求",
+      "验收标准模糊(如『界面要好看』),根本无法验证"
+    ],
+    gate:"任何成员读完需求文档后,复述的理解与需求方一致;每条需求都有可测的验收标准。",
+    example:[
+      {t:"一句话", x:"为市场团队解决「活动长链接难分享、无法统计点击」,做到「3 秒生成短链 + 实时点击统计」即为完成。"},
+      {t:"范 围", x:"In:生成短链、自定义后缀、点击统计看板。Out:SSO 登录、A/B 分流、二维码(留到下一圈)。"},
+      {t:"验 收", x:"Given 一个合法 URL,When 提交创建,Then 返回 ≤ 8 字符短码,访问短码 301 跳转回原链接。"},
+      {t:"约 束", x:"2 周交付;技术栈限定 FastAPI + Redis + PostgreSQL;跳转延迟 P99 < 50ms。"}
+    ]
+  },
+  {
+    id:"design", icon:"📐", name:"方案设计", en:"DESIGN", color:"#a78bfa",
+    goal:"在动手前比较多个方案、暴露技术风险。设计的产出是『能被挑战的决策』,不是漂亮的图。",
+    outputs:["方案对比表(≥2 个候选 + 权衡)","一页架构图 / 核心数据流","技术风险清单 + Spike 验证计划"],
+    checklist:[
+      "给出至少 2 个候选方案,对比复杂度 / 性能 / 可维护性 / 成本",
+      "画出架构图与核心数据流(一页之内能讲清)",
+      "定义模块边界与接口契约(API、数据结构)",
+      "列出技术风险,为每个高风险项安排 Spike 快速验证",
+      "明确非功能性方案:性能、安全、错误处理、可观测性",
+      "做一次设计评审:请至少一个人来挑战你的方案"
+    ],
+    pitfalls:[
+      "直接采用第一个想到的方案(锚定效应)",
+      "为不存在的未来需求过度设计(违反 YAGNI)",
+      "风险拖到实现期才暴露 —— 高风险假设应最先用 Spike 验证"
+    ],
+    gate:"设计能在 10 分钟内向他人讲清并经受住提问;所有高风险假设都有验证计划。",
+    example:[
+      {t:"候 选", x:"方案 A:自增 ID + Base62 编码(简单、码短)。方案 B:URL 哈希截断 + 冲突重试(无状态但有冲突成本)。选 A —— 内部工具无需防遍历,简单优先。"},
+      {t:"架 构", x:"Nginx → FastAPI → Redis(热点短码缓存)→ PostgreSQL(持久化 + 点击流水)。一页图讲清。"},
+      {t:"契 约", x:"POST /api/links {url, alias?} → {code, short_url};GET /{code} → 301。"},
+      {t:"风险Spike", x:"高并发跳转性能未知 → 第 1 天用 wrk 压测 Redis 缓存路径,目标 1000 QPS、P99 < 50ms。"}
+    ]
+  },
+  {
+    id:"plan", icon:"🗂️", name:"计划拆解", en:"BREAKDOWN", color:"#fbbf24",
+    goal:"把设计变成任何人都能领走执行的任务清单。按『可演示的垂直切片』排里程碑,而不是按技术分层。",
+    outputs:["里程碑清单(每个都可演示)","任务清单(粒度 ≤ 1 天,含 DoD)","依赖关系与砍范围预案"],
+    checklist:[
+      "按可演示的垂直切片划分里程碑,而非『先后端后前端』",
+      "任务拆到 ≤ 1 天粒度,每个任务写明完成定义(DoD)",
+      "标注任务间依赖,识别关键路径",
+      "高风险、高不确定的任务排在最前面,尽早暴露问题",
+      "估算乘以 1.5 留缓冲,不把日程排满 100%",
+      "写好砍范围预案:一旦延期,先砍什么、保什么"
+    ],
+    pitfalls:[
+      "按技术分层排期,导致项目后期才能首次集成验证",
+      "任务粒度过大(如『实现用户模块』),进度黑箱不可见",
+      "没有砍范围预案,延期时只剩加班或降质量两条路"
+    ],
+    gate:"第一个里程碑能在总计划约 20–30% 的时间点交付可演示的切片。",
+    example:[
+      {t:"里程碑1", x:"第 3 天:贴一个 URL 能拿到短链并成功跳转 —— 一条完整的垂直切片,直接演示给市场同学看。"},
+      {t:"里程碑2", x:"第 8 天:点击统计看板上线;第 10 天:自定义后缀 + 收尾打磨,留 4 天缓冲。"},
+      {t:"任务DoD", x:"「POST /api/links 创建接口」的 DoD = 覆盖合法/非法 URL 的单测 + 重复提交幂等 + 接口文档更新。"},
+      {t:"砍范围", x:"一旦延期:先砍「自定义后缀」,再砍看板的图表样式,核心的「生成 + 跳转 + 计数」绝不砍。"}
+    ]
+  },
+  {
+    id:"build", icon:"⚙️", name:"实现", en:"IMPLEMENT", color:"#34d399",
+    goal:"小步快跑、持续集成。发现与计划偏差时回到计划修订,而不是闷头硬改。",
+    outputs:["通过测试的可运行代码","清晰的小步提交历史","同步更新的文档"],
+    checklist:[
+      "TDD:先写一个失败的测试,再写实现(红 → 绿 → 重构)",
+      "小步提交:每次提交可构建、可测试、提交信息清晰",
+      "每日集成主干,避免长期存在的大分支",
+      "发现计划偏差时,回到计划修订并同步,而不是硬改",
+      "代码改动涉及的文档 / 注释同步更新",
+      "遇到 Bug 先写复现测试,再修复,防止回归"
+    ],
+    pitfalls:[
+      "『写完最后一起测』—— 缺陷堆积,定位成本指数上升",
+      "顺手重构无关代码,PR 膨胀到无法有效评审",
+      "偏离计划不上报,问题拖到里程碑前夜才爆炸"
+    ],
+    gate:"所有任务的 DoD 达成;CI 全绿;没有未记录在案的已知缺陷。",
+    example:[
+      {t:"TDD", x:"先写 test_create_link_returns_short_code(断言返回 ≤ 8 字符)看它失败,再实现 Base62 编码让它变绿。"},
+      {t:"小步提交", x:"feat: base62 encoder → feat: create link api → feat: redirect with redis cache,每次提交 CI 全绿。"},
+      {t:"偏差处理", x:"发现公司 Redis 版本不支持某命令 → 不硬改,回到计划:缓存层改为「进程内 LRU + Redis」双层,并同步修订任务。"},
+      {t:"防回归", x:"测出「URL 带中文参数跳转 404」→ 先写复现测试固定住这个 Bug,再修。"}
+    ]
+  },
+  {
+    id:"verify", icon:"🔍", name:"验证", en:"VERIFY", color:"#fb7185",
+    goal:"证据先于结论。『测试通过』不等于『功能正确』,逐条对照验收标准,真实运行验证。",
+    outputs:["验收标准逐条核对记录","Code Review 结论","回滚方案"],
+    checklist:[
+      "逐条核对验收标准,每条留下可复现的验证记录",
+      "真实运行应用做手动验证,不只依赖单元测试",
+      "Code Review:至少一名非作者评审通过",
+      "覆盖边界与异常路径:空输入、并发、网络失败、权限",
+      "完成性能与安全基线检查",
+      "上线前准备好回滚方案并演练过"
+    ],
+    pitfalls:[
+      "只验证 Happy Path,异常路径上线后才炸",
+      "用『我本地没问题』代替在目标环境的验证",
+      "把测试覆盖率当正确性 —— 测试可能根本没覆盖验收标准"
+    ],
+    gate:"每条验收标准都有截图 / 日志 / 测试记录作为证据,而非口头确认。",
+    example:[
+      {t:"验收核对", x:"「301 跳转正确」→ 在预发环境 curl -I 输出截图归档;「3 秒生成」→ 录屏存档。逐条打勾。"},
+      {t:"压测记录", x:"wrk 以 1000 QPS 压 60 秒,P99 = 23ms < 50ms ✅,报告存入 docs/perf-report.md。"},
+      {t:"异常路径", x:"提交非法 URL 返回 422;手动停掉 Redis,验证自动降级直查 PostgreSQL,跳转仍可用。"},
+      {t:"回 滚", x:"保留上一版本镜像,演练过 Nginx 切流回退,全程 3 分钟 —— 上线当天有人值守。"}
+    ]
+  },
+  {
+    id:"retro", icon:"🪞", name:"复盘迭代", en:"RETROSPECT", color:"#f97316",
+    goal:"让下一圈比这一圈更准、更快。教训要沉淀成 checklist、模板和自动化,而不是靠记忆。",
+    outputs:["估算偏差分析(Top 3 及原因)","已落实的改进项","下一圈的范围与优先级"],
+    checklist:[
+      "对比计划与实际:找出估算偏差最大的 3 项及其原因",
+      "汇总本圈缺陷分布,找出共性根因",
+      "把教训沉淀为 checklist / 模板 / 自动化检查",
+      "确认本圈哪些实践有效,明确保留下来",
+      "根据用户与团队反馈,调整下一圈的范围与优先级",
+      "庆祝交付 🎉 —— 可持续的节奏比一次性冲刺更重要"
+    ],
+    pitfalls:[
+      "复盘变成追责大会,下次没人敢说真话",
+      "改进项停留在会议记录里,没有落实到工具和流程",
+      "跳过复盘直接开下一圈,同一个坑连踩三遍"
+    ],
+    gate:"至少 1 项改进已落实为可执行的变更(脚本 / 模板 / 流程),并写入下一圈计划。",
+    example:[
+      {t:"最大偏差", x:"统计看板实际花了预估 2 倍时间 —— 低估了时区换算与点击去重逻辑。"},
+      {t:"沉 淀", x:"把「时间处理 checklist」加入团队模板;CI 加上 ruff 检查与 80% 覆盖率门槛,自动卡住。"},
+      {t:"保 留", x:"「第 3 天先出垂直切片」让市场同学提前反馈了 2 个需求误解 —— 这条实践固定下来。"},
+      {t:"下一圈", x:"用户最想要的是二维码生成与飞书分享集成(本圈 Out of Scope),按反馈提级为下一圈 P0。"}
+    ]
+  }
+];
+
+const KEY = "plan-loop-v1";
+let state = loadState();
+let lastPhase = -1;
+
+function loadState(){
+  try{
+    const s = JSON.parse(localStorage.getItem(KEY));
+    if(s && s.checks && s.gates){
+      if(typeof s.showExample === "undefined") s.showExample = true;
+      return s;
+    }
+  }catch(e){}
+  return {loop:1, active:0, checks:{}, gates:{}, showExample:true};
+}
+function save(){ localStorage.setItem(KEY, JSON.stringify(state)); }
+function checksFor(p){
+  if(!Array.isArray(state.checks[p.id]) || state.checks[p.id].length !== p.checklist.length)
+    state.checks[p.id] = p.checklist.map(() => false);
+  return state.checks[p.id];
+}
+function phasePct(p){
+  const c = checksFor(p);
+  return Math.round(c.filter(Boolean).length / c.length * 100);
+}
+function totalPct(){
+  return Math.round(PHASES.reduce((a,p) => a + phasePct(p), 0) / PHASES.length);
+}
+function allGatesPassed(){ return PHASES.every(p => state.gates[p.id]); }
+
+/* ---------- 循环图 ---------- */
+function buildDiagram(){
+  const box = document.getElementById("diagram");
+  PHASES.forEach((p,i) => {
+    const ang = (-90 + i*60) * Math.PI/180;
+    const x = 50 + 38*Math.cos(ang), y = 50 + 38*Math.sin(ang);
+    const n = document.createElement("div");
+    n.className = "node"; n.id = "node-"+p.id;
+    n.style.setProperty("--c", p.color);
+    n.style.left = x+"%"; n.style.top = y+"%";
+    n.style.animationDelay = (0.15 + i*0.07)+"s";
+    n.innerHTML = '<div class="ico">'+p.icon+'</div><div class="nm">'+(i+1)+'. '+p.name+'</div>'
+                + '<div class="mini"><i></i></div>';
+    n.onclick = () => { state.active = i; save(); renderAll(); };
+    box.appendChild(n);
+    const mid = (-90 + i*60 + 30) * Math.PI/180;
+    const ax = 50 + 38*Math.cos(mid), ay = 50 + 38*Math.sin(mid);
+    const ar = document.createElement("div");
+    ar.className = "step-arrow";
+    ar.style.left = ax+"%"; ar.style.top = ay+"%";
+    ar.style.transform = "translate(-50%,-50%) rotate(" + (i*60+30+90) + "deg)";
+    ar.textContent = "➤";
+    box.appendChild(ar);
+  });
+}
+
+/* ---------- 阶段面板 ---------- */
+function renderPanel(){
+  const p = PHASES[state.active];
+  const checks = checksFor(p);
+  const pct = phasePct(p);
+  const gatePassed = !!state.gates[p.id];
+  const gateReady = pct === 100;
+  const animate = lastPhase !== state.active;
+  lastPhase = state.active;
+  const panel = document.getElementById("panel");
+  panel.style.setProperty("--c", p.color);
+  panel.innerHTML = `
+  <div class="panel-inner ${animate ? "anim" : ""}">
+    <div class="panel-head">
+      <div class="big-ico">${p.icon}</div>
+      <div>
+        <h2><span class="step-no">0${state.active+1}</span>${p.name}<small>${p.en}</small></h2>
+        <div class="goal">${p.goal}</div>
+      </div>
+      <div class="ph-ring" style="background:conic-gradient(${p.color} ${pct*3.6}deg, rgba(255,255,255,.08) 0deg)">
+        <span>${pct}%</span>
+      </div>
+    </div>
+    <div class="example ${state.showExample ? "show" : ""}">
+      <div class="ex-head"><span class="pill">示 例</span>LiteLink 短链接服务 · 本阶段怎么做</div>
+      <div class="ex-grid">
+        ${p.example.map(e => `<div class="ex-item"><span class="t">${e.t}</span><span>${e.x}</span></div>`).join("")}
+      </div>
+    </div>
+    <div class="panel-body">
+      <div class="col">
+        <h4>行动清单 CHECKLIST</h4>
+        ${p.checklist.map((item,i) => `
+          <label class="check">
+            <input type="checkbox" data-i="${i}" ${checks[i] ? "checked" : ""}>
+            <span>${item}</span>
+          </label>`).join("")}
+      </div>
+      <div class="col">
+        <h4>关键产出 OUTPUTS</h4>
+        <ul class="outputs">${p.outputs.map(o => `<li>${o}</li>`).join("")}</ul>
+        <details class="pitfalls">
+          <summary>💣 常见陷阱(${p.pitfalls.length})</summary>
+          <ul>${p.pitfalls.map(t => `<li>${t}</li>`).join("")}</ul>
+        </details>
+        <div class="gate">
+          <h5>🚧 阶段门禁 GATE</h5>
+          <p>${p.gate}</p>
+          <button class="btn btn-gate ${gatePassed ? "passed" : ""}" id="gateBtn"
+                  ${(!gateReady && !gatePassed) ? "disabled" : ""}>
+            ${gatePassed ? "✓ 门禁已通过" : "通过门禁 →"}
+          </button>
+          ${(!gateReady && !gatePassed) ? '<div class="hint">⏳ 完成左侧全部清单后,门禁才会解锁</div>' : ""}
+        </div>
+      </div>
+    </div>
+    <div class="panel-foot">
+      <button class="btn btn-ghost" id="prevBtn" ${state.active === 0 ? "disabled" : ""}>← 上一阶段</button>
+      <span class="kbd-hint">提示:<kbd>←</kbd> <kbd>→</kbd> 切换阶段</span>
+      <button class="btn btn-ghost" id="nextBtn" ${state.active === PHASES.length-1 ? "disabled" : ""}>下一阶段 →</button>
+    </div>
+  </div>`;
+
+  panel.querySelectorAll(".check input").forEach(cb => {
+    cb.onchange = () => {
+      checks[+cb.dataset.i] = cb.checked;
+      if(!cb.checked && state.gates[p.id]) state.gates[p.id] = false;
+      save(); renderAll();
+    };
+  });
+  panel.querySelector("#gateBtn").onclick = () => {
+    if(state.gates[p.id]){ state.gates[p.id] = false; }
+    else{
+      state.gates[p.id] = true;
+      toast("🚧 「" + p.name + "」门禁已通过!");
+      if(!allGatesPassed() && state.active < PHASES.length-1) state.active++;
+    }
+    save(); renderAll();
+  };
+  panel.querySelector("#prevBtn").onclick = () => { state.active--; save(); renderAll(); };
+  panel.querySelector("#nextBtn").onclick = () => { state.active++; save(); renderAll(); };
+}
+
+/* ---------- 总览与中心进度 ---------- */
+function renderOverview(){
+  const ov = document.getElementById("overview");
+  ov.innerHTML = PHASES.map((p,i) => `
+    <div class="ov-card" style="--c:${p.color}" onclick="goPhase(${i})">
+      <div>${p.icon}</div>
+      <div class="t">${p.name}</div>
+      <div class="bar"><i style="width:${phasePct(p)}%"></i></div>
+      <div class="st">${state.gates[p.id] ? "✅ 门禁通过" : phasePct(p)+"%"}</div>
+    </div>`).join("");
+}
+function goPhase(i){
+  state.active = i; save(); renderAll();
+  document.getElementById("panel").scrollIntoView({behavior:"smooth"});
+}
+function renderHub(){
+  const pct = totalPct();
+  document.getElementById("loopNum").textContent = state.loop;
+  document.getElementById("totalPct").textContent = pct;
+  document.getElementById("hubRing").style.background =
+    "conic-gradient(from -90deg, #7dd3fc 0deg, #a78bfa " + (pct*3.6) + "deg, rgba(255,255,255,.07) " + (pct*3.6) + "deg)";
+  PHASES.forEach((p,i) => {
+    const n = document.getElementById("node-"+p.id);
+    n.classList.toggle("active", i === state.active);
+    n.classList.toggle("done", !!state.gates[p.id]);
+    n.querySelector(".mini i").style.width = phasePct(p)+"%";
+  });
+  document.getElementById("banner").classList.toggle("show", allGatesPassed());
+  document.getElementById("nextLoopNum").textContent = state.loop + 1;
+  document.getElementById("exampleToggle").checked = state.showExample;
+  document.getElementById("demoIntro").classList.toggle("show", state.showExample);
+}
+function renderAll(){ renderPanel(); renderOverview(); renderHub(); }
+
+/* ---------- 动作 ---------- */
+function nextLoop(){
+  state.loop++; state.checks = {}; state.gates = {}; state.active = 0;
+  save(); renderAll();
+  toast("🔄 第 " + state.loop + " 圈开始,祝顺利!");
+  window.scrollTo({top:0, behavior:"smooth"});
+}
+function resetLoop(){
+  if(!confirm("清空本圈所有勾选与门禁状态(圈数保留)?")) return;
+  state.checks = {}; state.gates = {}; state.active = 0;
+  save(); renderAll(); toast("已重置本圈进度");
+}
+function resetAll(){
+  if(!confirm("彻底重置:圈数回到第 1 圈,所有进度清空?")) return;
+  state = {loop:1, active:0, checks:{}, gates:{}, showExample:true};
+  save(); renderAll(); toast("已全部重置");
+}
+function exportMarkdown(){
+  let md = "# 程序开发计划循环 —— 第 " + state.loop + " 圈(总进度 " + totalPct() + "%)\n\n";
+  PHASES.forEach((p,i) => {
+    const checks = checksFor(p);
+    md += "## " + (i+1) + ". " + p.icon + " " + p.name + "(" + p.en + ")\n\n";
+    md += "> 目标:" + p.goal + "\n\n";
+    md += "**门禁**:" + p.gate + " " + (state.gates[p.id] ? "✅ 已通过" : "⏳ 未通过") + "\n\n";
+    md += "### 行动清单\n";
+    p.checklist.forEach((item,j) => { md += "- [" + (checks[j] ? "x" : " ") + "] " + item + "\n"; });
+    md += "\n### 关键产出\n";
+    p.outputs.forEach(o => { md += "- " + o + "\n"; });
+    if(state.showExample){
+      md += "\n### 示例参考(LiteLink 短链接服务)\n";
+      p.example.forEach(e => { md += "- **" + e.t.replace(/\s/g,"") + "**:" + e.x + "\n"; });
+    }
+    md += "\n";
+  });
+  copyText(md);
+}
+function copyText(text){
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(text)
+      .then(() => toast("📋 Markdown 已复制到剪贴板"))
+      .catch(() => fallbackCopy(text));
+  } else fallbackCopy(text);
+}
+function fallbackCopy(text){
+  const ta = document.createElement("textarea");
+  ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0";
+  document.body.appendChild(ta); ta.select();
+  try{ document.execCommand("copy"); toast("📋 Markdown 已复制到剪贴板"); }
+  catch(e){ toast("复制失败,请手动选择文本"); }
+  document.body.removeChild(ta);
+}
+let toastTimer;
+function toast(msg){
+  const t = document.getElementById("toast");
+  t.textContent = msg; t.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove("show"), 2400);
+}
+
+/* ---------- 全局交互 ---------- */
+document.getElementById("exampleToggle").onchange = function(){
+  state.showExample = this.checked; save(); renderAll();
+};
+document.addEventListener("keydown", e => {
+  if(e.key === "ArrowLeft" && state.active > 0){ state.active--; save(); renderAll(); }
+  if(e.key === "ArrowRight" && state.active < PHASES.length-1){ state.active++; save(); renderAll(); }
+});
+
+buildDiagram();
+renderAll();
+</script>
+
+
+</body></html>

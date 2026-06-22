@@ -11,6 +11,7 @@ import {
   PlayCircleOutlined,
   PlusOutlined,
   SettingOutlined,
+  ThunderboltOutlined,
   UnorderedListOutlined,
   UserOutlined,
 } from '@ant-design/icons'
@@ -37,6 +38,7 @@ import { api } from './api.js'
 import Admin from './pages/Admin.jsx'
 import DataCollect from './pages/DataCollect.jsx'
 import FactorResearch from './pages/FactorResearch.jsx'
+import MarketSentiment from './pages/MarketSentiment.jsx'
 import Alerts from './pages/Alerts.jsx'
 import Dashboard from './pages/Dashboard.jsx'
 import FeatureGroupDetail from './pages/FeatureGroupDetail.jsx'
@@ -55,6 +57,7 @@ const MENU = [
   { key: '/runs', icon: <PlayCircleOutlined />, label: '实例' },
   { key: '/query', icon: <ConsoleSqlOutlined />, label: '数据查询' },
   { key: '/factor-research', icon: <FundOutlined />, label: '因子研究' },
+  { key: '/market-sentiment', icon: <ThunderboltOutlined />, label: '市场情绪' },
   { key: '/datasets', icon: <DatabaseOutlined />, label: '数据采集' },
   { key: '/alerts', icon: <AlertOutlined />, label: '告警' },
 ]
@@ -296,6 +299,7 @@ export default function App() {
             <Route path="/runs/:id" element={<RunDetail />} />
             <Route path="/query" element={<QueryPage />} />
             <Route path="/factor-research" element={<FactorResearch />} />
+            <Route path="/market-sentiment" element={<MarketSentiment />} />
             <Route path="/datasets" element={<DataCollect />} />
             <Route path="/alerts" element={<Alerts />} />
             {isAdmin && <Route path="/admin" element={<Admin />} />}

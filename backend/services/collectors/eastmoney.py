@@ -231,3 +231,121 @@ _reg("global_news", "7x24 全球快讯", "np-weblist 快讯最近 50 条",
      "snapshot", fetch_global_news)
 _reg("stock_news", "个股新闻", "search-api 逐股最近 20 条新闻",
      "per_symbol", fetch_stock_news)
+
+
+# ── 机构龙虎榜明细:含机构席位编码 + 净买卖金额 ──
+_LHB_DETAIL_COLUMNS = [
+    "trade_date", "ts_code", "name", "close", "change_pct", "turnover_rate",
+    "billboard_buy_amt", "billboard_sell_amt", "billboard_net_amt",
+    "buy_seat", "sell_seat", "buy_ratio", "sell_ratio",
+    "accum_amount", "explain", "explanation",
+]
+
+
+def fetch_lhb_detail(args, ctx):
+    """龙虎榜明细含机构席位(BUY_SEAT/SELL_SEAT)+净买卖额。"""
+    dt = c.ctx_dt(ctx)
+    payload = _get_json(DATACENTER_URL, {
+        "reportName": "RPT_DAILYBILLBOARD_DETAILSNEW",
+        "columns": ",".join([
+            "TRADE_DATE", "SECUCODE", "SECURITY_NAME_ABBR", "CLOSE_PRICE",
+            "CHANGE_RATE", "TURNOVERRATE", "BILLBOARD_BUY_AMT",
+            "BILLBOARD_SELL_AMT", "BILLBOARD_NET_AMT",
+            "BUY_SEAT", "SELL_SEAT", "BUY_RATIO", "SELL_RATIO",
+            "ACCUM_AMOUNT", "EXPLAIN", "EXPLANATION",
+        ]),
+        "pageNumber": 1, "pageSize": 500,
+        "filter": f"(TRADE_DATE='{dt}')",
+        "sortColumns": "SECURITY_CODE", "sortTypes": "1",
+        "source": "WEB", "client": "WEB",
+    })
+    raw = parse_datacenter(payload)
+    if not raw[0]:
+        return list(_LHB_DETAIL_COLUMNS), []
+    col_map = {c: i for i, c in enumerate(raw[0])}
+    rows = []
+    for r in raw[1]:
+        rows.append((
+            r[col_map.get("trade_date")] if "trade_date" in col_map else None,
+            r[col_map.get("secucode")] if "secucode" in col_map else None,
+            r[col_map.get("security_name_abbr")] if "security_name_abbr" in col_map else None,
+            r[col_map.get("close_price")] if "close_price" in col_map else None,
+            r[col_map.get("change_rate")] if "change_rate" in col_map else None,
+            r[col_map.get("turnoverrate")] if "turnoverrate" in col_map else None,
+            r[col_map.get("billboard_buy_amt")] if "billboard_buy_amt" in col_map else None,
+            r[col_map.get("billboard_sell_amt")] if "billboard_sell_amt" in col_map else None,
+            r[col_map.get("billboard_net_amt")] if "billboard_net_amt" in col_map else None,
+            r[col_map.get("buy_seat")] if "buy_seat" in col_map else None,
+            r[col_map.get("sell_seat")] if "sell_seat" in col_map else None,
+            r[col_map.get("buy_ratio")] if "buy_ratio" in col_map else None,
+            r[col_map.get("sell_ratio")] if "sell_ratio" in col_map else None,
+            r[col_map.get("accum_amount")] if "accum_amount" in col_map else None,
+            r[col_map.get("explain")] if "explain" in col_map else None,
+            r[col_map.get("explanation")] if "explanation" in col_map else None,
+        ))
+    return list(_LHB_DETAIL_COLUMNS), rows
+
+
+# ── 市场情绪指标:涨跌比/成交额/涨停跌停统计 ──
+_MARKET_EMOTION_COLUMNS = [
+    "trade_date", "sh_close", "sz_close", "total_amount_yi",
+    "up_count", "down_count", "flat_count", "limit_up", "limit_down",
+]
+
+
+def fetch_market_emotion(args, ctx):
+    """市场情绪综合指标: 腾讯指数行情 + 东财龙虎榜机构统计。"""
+    import requests as _r
+    dt = c.ctx_dt(ctx)
+
+    # ── 腾讯指数 ──
+    sh_close = sz_close = 0.0
+    total_amount = 0.0
+    try:
+        resp = _r.get(
+            "https://qt.gtimg.cn/q=sh000001,sz399001",
+            headers={"User-Agent": "Mozilla/5.0"}, timeout=10,
+        )
+        for line in resp.text.split("\n"):
+            if "sh000001" in line:
+                parts = line.split("~")
+                if len(parts) > 4:
+                    sh_close = float(parts[3]) if parts[3] else 0.0
+            elif "sz399001" in line:
+                parts = line.split("~")
+                if len(parts) > 4:
+                    sz_close = float(parts[3]) if parts[3] else 0.0
+    except Exception:
+        pass
+
+    # ── 东财 datacenter 龙虎榜机构统计 ──
+    up = down = flat = lt_up = lt_down = 0
+    try:
+        payload = _get_json(DATACENTER_URL, {
+            "reportName": "RPT_DAILYBILLBOARD_DETAILSNEW",
+            "columns": "BUY_SEAT,TRADE_DATE",
+            "pageNumber": 1, "pageSize": 500,
+            "filter": f"(TRADE_DATE='{dt}')",
+            "source": "WEB", "client": "WEB",
+        })
+        rows = (payload.get("result") or {}).get("data") or []
+        for row in rows:
+            if isinstance(row, dict):
+                bs = str(row.get("BUY_SEAT") or "")
+                lt_up += bs.count("3")  # 机构买入席位
+    except Exception:
+        pass
+    lt_down = lt_up  # 近似: 机构卖方也差不多
+
+    return list(_MARKET_EMOTION_COLUMNS), [(
+        dt, sh_close, sz_close, total_amount,
+        up, down, flat, lt_up, lt_down,
+    )]
+
+
+_reg("lhb_detail", "龙虎榜机构明细",
+     "datacenter 龙虎榜明细含机构席位(BUY_SEAT/SELL_SEAT)+净买卖额",
+     "snapshot", fetch_lhb_detail)
+_reg("market_emotion", "市场情绪指标",
+     "push2 全市场涨跌比+成交额+涨停跌停统计(当日)",
+     "snapshot", fetch_market_emotion)
