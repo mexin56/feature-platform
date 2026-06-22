@@ -614,6 +614,7 @@ export default function DataCollect() {
   const [tokenModalOpen, setTokenModalOpen] = useState(false)
   const [tokenBusy, setTokenBusy] = useState(false)
   const [tokenForm] = Form.useForm()
+  const [fetchBusy, setFetchBusy] = useState(false)
 
   /* Custom dataset drawer */
   const [drawerOpen, setDrawerOpen] = useState(false)
@@ -684,6 +685,24 @@ export default function DataCollect() {
       // error shown by api.js
     } finally {
       setTokenBusy(false)
+    }
+  }
+
+  /* ── 一键拉取今日行情 ── */
+  const handleFetchToday = async () => {
+    setFetchBusy(true)
+    try {
+      const r = await api.post('/api/factors/compute', {
+        factor_ids: [1, 2, 15, 16, 18, 21],
+        start_date: new Date().toISOString().slice(0, 10),
+        end_date: new Date().toISOString().slice(0, 10),
+      })
+      message.success(`因子计算完成: ${r.rows} 行`)
+      load()
+    } catch {
+      // error shown by api.js
+    } finally {
+      setFetchBusy(false)
     }
   }
 
@@ -960,6 +979,13 @@ export default function DataCollect() {
             onClick={openNewDrawer}
           >
             新增自定义数据集
+          </Button>
+          <Button
+            icon={<DatabaseOutlined />}
+            onClick={handleFetchToday}
+            loading={fetchBusy}
+          >
+            拉取今日行情
           </Button>
           {isAdmin && (
             <Button
