@@ -114,7 +114,7 @@ class WorkflowRun(Base):
     run_type: Mapped[str] = mapped_column(String(16), nullable=False)  # scheduled/manual/backfill
     data_interval_start: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     data_interval_end: Mapped[datetime] = mapped_column(DateTime, nullable=False)
-    state: Mapped[str] = mapped_column(String(16), default="running")  # running/success/failed/stopped
+    state: Mapped[str] = mapped_column(String(16), default="queued")  # queued/running/success/failed/stopped
     triggered_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

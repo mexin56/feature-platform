@@ -31,7 +31,7 @@ const STATE_LABEL = {
   success: '成功',
   failed: '失败',
   running: '运行中',
-  queued: '等待',
+  queued: '排队中',
   stopped: '已停止',
   up_for_retry: '等待重试',
   upstream_failed: '上游失败',

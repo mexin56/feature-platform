@@ -320,9 +320,11 @@ export default function RunDetail() {
         <Descriptions.Item label="创建时间">{fmt(run.created_at)}</Descriptions.Item>
         <Descriptions.Item label="完成时间">{fmt(run.finished_at)}</Descriptions.Item>
         <Descriptions.Item label="总耗时">
-          {run.state === 'running'
-            ? `运行中 · ${duration(run.created_at, run.finished_at)}`
-            : duration(run.created_at, run.finished_at)}
+          {run.state === 'queued'
+            ? '排队中'
+            : run.state === 'running'
+              ? `运行中 · ${duration(run.created_at, run.finished_at)}`
+              : duration(run.created_at, run.finished_at)}
         </Descriptions.Item>
       </Descriptions>
 

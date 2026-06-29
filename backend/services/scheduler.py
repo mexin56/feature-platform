@@ -42,7 +42,8 @@ class Scheduler:
         dag = json.loads(ver.dag_json)
         run = WorkflowRun(workflow_id=wf.id, version_id=ver.id, run_type=run_type,
                           data_interval_start=interval_start, data_interval_end=interval_end,
-                          triggered_by=triggered_by, parallel_degree=parallel_degree)
+                          triggered_by=triggered_by, parallel_degree=parallel_degree,
+                          state="queued")
         db.add(run)
         db.flush()
         for n in dag["nodes"]:
@@ -87,7 +88,7 @@ class Scheduler:
         active_count = db.scalar(
             select(func.count()).select_from(WorkflowRun).where(
                 WorkflowRun.workflow_id == wf.id,
-                WorkflowRun.state == "running",
+                WorkflowRun.state.in_(["running", "queued"]),
                 WorkflowRun.run_type.in_(("scheduled", "manual"))))
         ver = db.get(WorkflowVersion, wf.current_version_id)
         assert ver is not None, f"工作流 {wf.id} 缺少当前版本"
@@ -107,6 +108,18 @@ class Scheduler:
     # ---- ② 依赖推进与完结 ----
     def advance_runs(self) -> None:
         with self.SessionLocal() as db:
+            # queued → running: gate 放行排队的实例
+            queued_runs = db.scalars(
+                select(WorkflowRun).where(WorkflowRun.state == "queued")
+                .order_by(WorkflowRun.workflow_id, WorkflowRun.data_interval_start)
+            ).all()
+            q_gated = self._gate(db, queued_runs)
+            for run in q_gated:
+                run.state = "running"
+            if q_gated:
+                db.commit()
+
+            # running → 推进 / 完结
             runs = db.scalars(select(WorkflowRun).where(WorkflowRun.state == "running")
                               .order_by(WorkflowRun.workflow_id,
                                         WorkflowRun.data_interval_start)).all()

@@ -116,6 +116,7 @@ def drain_queue(settings, max_batch: int = 10) -> int:
         full_data = [tuple(r) + (dt, collected_at) for r in data]
 
         retries = 3
+        ok = False
         for attempt in range(retries):
             try:
                 duck = duckdb.connect(str(duck_path))
@@ -135,22 +136,23 @@ def drain_queue(settings, max_batch: int = 10) -> int:
                         duck.executemany(f"insert into {table_name} ({collist}) values ({ph})", full_data)
                 finally:
                     duck.close()
+                ok = True
                 break
             except Exception:
                 if attempt < retries - 1:
-                    time.sleep(1)
+                    time.sleep(attempt + 1)
                     continue
-                # 重试耗尽 → 跳过该条目,下个 drain 再试
                 break
 
-        # 标记为 done
-        con2 = sqlite3.connect(str(db_path))
-        try:
-            con2.execute("UPDATE write_queue SET status = 'done' WHERE id = ?", (qid,))
-            con2.commit()
-        finally:
-            con2.close()
-        processed += 1
+        # 仅成功时才标记为 done
+        if ok:
+            con2 = sqlite3.connect(str(db_path))
+            try:
+                con2.execute("UPDATE write_queue SET status = 'done' WHERE id = ?", (qid,))
+                con2.commit()
+            finally:
+                con2.close()
+            processed += 1
 
     return processed
 

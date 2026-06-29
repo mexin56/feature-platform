@@ -42,7 +42,7 @@ class Executor:
             rows = db.execute(
                 select(TaskInstance.id)
                 .join(WorkflowRun, WorkflowRun.id == TaskInstance.run_id)
-                .where(TaskInstance.state == "queued", WorkflowRun.state == "running")
+                .where(TaskInstance.state == "queued", WorkflowRun.state.in_(["running", "queued"]))
                 .order_by(TaskInstance.id).limit(limit)).scalars().all()
         return [tid for tid in rows if self._claim(tid)]
 
