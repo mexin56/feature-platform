@@ -30,17 +30,23 @@ const RUN_TYPE_COLOR = {
 
 export default function Runs() {
   const [workflows, setWorkflows] = useState([])
-  const [selectedWid, setSelectedWid] = useState(null)   // null = 全部
+  const [selectedWid, setSelectedWid] = useState(null)
   const [runs, setRuns] = useState([])
   const [loadingWf, setLoadingWf] = useState(false)
   const [loadingRuns, setLoadingRuns] = useState(false)
   const [stateFilter, setStateFilter] = useState(null)
   const [typeFilter, setTypeFilter] = useState(null)
-  const [actionBusy, setActionBusy] = useState({})        // rid → bool
+  const [pageSize, setPageSize] = useState(20)
+  const [actionBusy, setActionBusy] = useState({})
   const navigate = useNavigate()
-  const intervalRef = useRef(null)
 
-  // Load workflow list once on mount (no auto-select)
+  // Ref avoids stale closure in setInterval polling
+  const filterRef = useRef({ wid: null, state: null, type: null })
+  const syncFilter = (wid, state, type) => {
+    filterRef.current = { wid, state, type }
+  }
+
+  // Load workflow list once on mount
   useEffect(() => {
     setLoadingWf(true)
     api.get('/api/workflows')
@@ -49,7 +55,6 @@ export default function Runs() {
       .finally(() => setLoadingWf(false))
   }, [])
 
-  // Build URL for GET /api/runs with current filters
   const buildRunsUrl = (wid, state, type) => {
     const params = new URLSearchParams()
     if (wid)   params.set('workflow_id', wid)
@@ -59,7 +64,6 @@ export default function Runs() {
     return qs ? `/api/runs?${qs}` : '/api/runs'
   }
 
-  // Fetch runs with current filter state (used by polling too)
   const fetchRuns = (wid, state, type) => {
     api.get(buildRunsUrl(wid, state, type))
       .then(setRuns)
@@ -69,21 +73,21 @@ export default function Runs() {
   // Fetch runs whenever any filter changes
   useEffect(() => {
     setLoadingRuns(true)
-    api.get(buildRunsUrl(selectedWid, stateFilter, typeFilter))
-      .then(setRuns)
-      .catch(() => {})
-      .finally(() => setLoadingRuns(false))
+    fetchRuns(selectedWid, stateFilter, typeFilter)
+    // Use setTimeout to avoid setState-during-render warning
+    const t = setTimeout(() => setLoadingRuns(false), 50)
+    return () => clearTimeout(t)
   }, [selectedWid, stateFilter, typeFilter])
 
-  // 5s polling — rebuild timer on filter change; skip when tab hidden
+  // 5s polling — read latest filter from ref to avoid stale closure
   useEffect(() => {
-    if (intervalRef.current) clearInterval(intervalRef.current)
-    intervalRef.current = setInterval(() => {
+    const id = setInterval(() => {
       if (document.hidden) return
-      fetchRuns(selectedWid, stateFilter, typeFilter)
+      const { wid, state, type } = filterRef.current
+      fetchRuns(wid, state, type)
     }, 5000)
-    return () => clearInterval(intervalRef.current)
-  }, [selectedWid, stateFilter, typeFilter])
+    return () => clearInterval(id)
+  }, [])
 
   const handleStop = async (rid) => {
     setActionBusy((b) => ({ ...b, [rid]: true }))
@@ -244,7 +248,9 @@ export default function Runs() {
           loading={loadingWf}
           value={selectedWid}
           onChange={(v) => {
-            setSelectedWid(v ?? null)
+            const wid = v ?? null
+            setSelectedWid(wid)
+            syncFilter(wid, stateFilter, typeFilter)
             setRuns([])
           }}
           options={workflows.map((w) => ({ label: w.name, value: w.id }))}
@@ -256,7 +262,11 @@ export default function Runs() {
           placeholder="状态筛选"
           allowClear
           value={stateFilter}
-          onChange={(v) => setStateFilter(v ?? null)}
+          onChange={(v) => {
+            const s = v ?? null
+            setStateFilter(s)
+            syncFilter(selectedWid, s, typeFilter)
+          }}
           options={[
             { label: '运行中', value: 'running' },
             { label: '成功', value: 'success' },
@@ -270,7 +280,11 @@ export default function Runs() {
           placeholder="类型筛选"
           allowClear
           value={typeFilter}
-          onChange={(v) => setTypeFilter(v ?? null)}
+          onChange={(v) => {
+            const t = v ?? null
+            setTypeFilter(t)
+            syncFilter(selectedWid, stateFilter, t)
+          }}
           options={[
             { label: '手动', value: 'manual' },
             { label: '调度', value: 'scheduled' },
@@ -285,10 +299,12 @@ export default function Runs() {
         dataSource={runs}
         columns={columns}
         pagination={{
-          pageSize: 20,
+          current: undefined,
+          pageSize,
           showSizeChanger: true,
           pageSizeOptions: ['10', '20', '50', '100'],
           hideOnSinglePage: true,
+          onShowSizeChange: (_current, size) => setPageSize(size),
         }}
         size="small"
         locale={{ emptyText: '暂无实例' }}
