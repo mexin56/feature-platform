@@ -89,11 +89,23 @@ def _query_duckdb(db, settings, pid, sql, limit):
     con = duckdb.connect()
     try:
         views = _register_views(con, db, settings, pid)
-        attach_market(con, settings)  # 行情库只读挂载,market.ods_xxx 可查
-        cur = con.execute(sql)
-        rows = cur.fetchmany(limit)
-        cols = [c[0] for c in cur.description] if cur.description else []
-        return cols, [[_cell(v) for v in r] for r in rows], views
+        try:
+            con.execute(f"ATTACH '{Path(settings.market_db).as_posix()}' AS market (READ_ONLY)")
+            cur = con.execute(sql)
+            rows = cur.fetchmany(limit)
+            cols = [c[0] for c in cur.description] if cur.description else []
+            return cols, [[_cell(v) for v in r] for r in rows], views
+        except Exception:
+            # ATTACH 失败(写锁等) → 在直连上执行(去掉 market. 前缀)
+            market_con = duckdb.connect(str(settings.market_db), read_only=True)
+            try:
+                fixed_sql = sql.replace("market.", "").replace("`market.", "`")
+                cur = market_con.execute(fixed_sql)
+                rows = cur.fetchmany(limit)
+                cols = [c[0] for c in cur.description] if cur.description else []
+                return cols, [[_cell(v) for v in r] for r in rows], views
+            finally:
+                market_con.close()
     except HTTPException:
         raise
     except Exception as e:  # noqa: BLE001  用户 SQL 错误统一转 400
