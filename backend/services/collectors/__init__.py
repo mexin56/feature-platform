@@ -14,7 +14,7 @@ def register(ds: DataSet) -> None:
 
 _COLLECTOR_MODULES = ("tencent", "sina", "eastmoney", "ths", "cninfo",
                       "akshare_src", "baostock_src", "mootdx_src",
-                      "tushare_src", "qmt_src", "wencai")
+                      "tushare_src", "qmt_src", "etf_src", "wencai")
 
 for _m in _COLLECTOR_MODULES:
     try:
