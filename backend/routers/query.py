@@ -166,8 +166,12 @@ def catalog(engine: str, connection_id: int | None = None, db: str | None = None
                             {"name": f"market.{t}",
                              "columns": [{"name": c[0], "dtype": c[1]} for c in cols]})
                 else:
-                    # 写锁冲突 ATTACH 失败 → 另开直读连接(无锁冲突时可用)
-                    market_con = duckdb.connect(str(settings.market_db), read_only=True)
+                    # 主进程持锁(写队列 drain)使 ATTACH 失败
+                    # 这时不能用 read_only 连接(不同配置被拒),用常规 connect
+                    try:
+                        market_con = duckdb.connect(str(settings.market_db))
+                    except duckdb.IOException as e:
+                        raise duckdb.Error from e  # 交给外层 except
                     try:
                         tbls = market_con.execute(
                             "select table_name from information_schema.tables "
