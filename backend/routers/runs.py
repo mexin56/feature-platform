@@ -104,22 +104,32 @@ def backfill(wid: int, body: BackfillIn, db=Depends(get_db),
     if ver is None:
         raise HTTPException(400, "工作流缺少版本")
     sched = Scheduler(None)
-    it = croniter(wf.cron, body.start_date - timedelta(microseconds=1))
+
+    # 将补数区间转换到工作流时区的 naive 时间
+    # 注意:用户选的日期(如 6/29 周一)期望包含当天的 cron 触发区间
+    # cron=0 17 * * 1-5 在 17:00 触发,每个触发对应一个区间(昨天17:00~今天17:00)
+    # 用户选 end=6/29(end_local=6/29 00:00),但 6/29 17:00 才产生区间
+    # 所以将 end 延长到次日,使当日 17:00 落在区间内
+    from zoneinfo import ZoneInfo
+
+    tz = ZoneInfo(wf.timezone)
+    start_local = body.start_date.astimezone(tz).replace(tzinfo=None)
+    end_local = body.end_date.astimezone(tz).replace(tzinfo=None) + timedelta(days=1)
+
+    it = croniter(wf.cron, start_local - timedelta(microseconds=1))
     a = it.get_next(datetime)
     pairs = []
     while True:
         b = it.get_next(datetime)
-        if b > body.end_date:
+        if b > end_local:
             break
         pairs.append((a, b))
         a = b
     start = body.start_date
     end = body.end_date
-    # 审计先于创建循环(同首个 create_run 事务提交):中途失败时审计计数可能多于实际创建数,
-    # 有意取舍——审计语义为"发起了 x N 的补数请求"而非"成功创建 N 个实例"。
     record(db, user, "backfill", f"{start}~{end} x{len(pairs)}", project_id=pid)
     if not pairs:
-        db.commit()  # 空区间也落审计
+        db.commit()
         return {"created": 0}
     created = 0
     for a, b in pairs:
