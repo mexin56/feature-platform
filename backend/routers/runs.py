@@ -136,9 +136,10 @@ def backfill(wid: int, body: BackfillIn, db=Depends(get_db),
     record(db, user, "backfill", f"{start}~{end} x{len(pairs)}", project_id=pid)
     if not pairs:
         db.commit()
-        return {"created": 0, "skipped": 0, "total": len(pairs)}
+        return {"created": 0, "skipped": 0, "restarted": 0, "total": len(pairs)}
     created = 0
     skipped = 0
+    restarted = 0
     for a, b in pairs:
         dup = db.scalar(select(WorkflowRun.id).where(
             WorkflowRun.workflow_id == wf.id, WorkflowRun.run_type == "backfill",
@@ -148,9 +149,17 @@ def backfill(wid: int, body: BackfillIn, db=Depends(get_db),
                              triggered_by=user.id, parallel_degree=body.parallel)
             created += 1
         else:
-            skipped += 1
+            old_run = db.get(WorkflowRun, dup)
+            if old_run.state in ("success", "failed", "stopped"):
+                # 已完结的旧实例 → 创建新实例重跑
+                sched.create_run(db, wf, ver, "backfill", a, b,
+                                 triggered_by=user.id, parallel_degree=body.parallel)
+                restarted += 1
+            else:
+                # 还在运行/排队中 → 跳过,不要重复触发
+                skipped += 1
     db.commit()
-    return {"created": created, "skipped": skipped, "total": len(pairs)}
+    return {"created": created, "skipped": skipped, "restarted": restarted, "total": len(pairs)}
 
 
 @router.get("/runs")
