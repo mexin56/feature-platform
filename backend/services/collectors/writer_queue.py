@@ -83,8 +83,13 @@ def enqueue(settings, table: str, dt: str, columns: list[str],
 
 
 def drain_queue(settings, max_batch: int = 10) -> int:
-    """从队列取至多 max_batch 条,依次写入 market.duckdb。
+    """从队列取至多 max_batch 条,依次写入目标数据库。
     返回处理条数。失败条目保留在队列中(status 不变 / 下次重试)。"""
+
+    # PostgreSQL 模式下写队列不需要 drain(直接写)
+    if getattr(settings, "market_engine", "postgres") == "postgres":
+        return 0
+
     import duckdb
 
     db_path = Path(settings.db_path)

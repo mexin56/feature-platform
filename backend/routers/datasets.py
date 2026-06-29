@@ -27,8 +27,12 @@ TEST_SYMBOL_CAP, TEST_PREVIEW_ROWS = 2, 5
 
 
 def _market_stats(settings) -> dict[str, dict]:
-    """market.duckdb 中全部 ods_ 表的 {table: {rows, max_dt}}:一次连接批量统计,
-    再映射回目录(库不存在/正被写入/文件损坏返回空 dict,目录侧 stats=null)。"""
+    """获取集市表统计行数和最新 dt。"""
+    from pathlib import Path
+
+    if getattr(settings, "market_engine", "postgres") == "postgres":
+        return _pg_market_stats(settings)
+    # DuckDB 模式
     p = Path(getattr(settings, "market_db", "") or "")
     if not str(p) or not p.exists():
         return {}
@@ -52,6 +56,34 @@ def _market_stats(settings) -> dict[str, dict]:
             con.close()
     except duckdb.Error:  # 写入期间锁冲突/损坏库:目录降级为无统计
         return {}
+    return stats
+
+
+def _pg_market_stats(settings) -> dict[str, dict]:
+    """PostgreSQL 集市表统计(行数+最新 dt)。"""
+    import psycopg2
+    try:
+        conn = psycopg2.connect(settings.pg_url)
+    except Exception:
+        return {}
+    stats = {}
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT table_name FROM information_schema.tables "
+                "WHERE table_schema='public' AND table_name LIKE 'ods_%%' ORDER BY table_name")
+            tables = [r[0] for r in cur.fetchall()]
+            for t in tables:
+                try:
+                    cur.execute(f'SELECT count(*), max(dt) FROM "{t}"')
+                    rows, max_dt = cur.fetchone()
+                    stats[t] = {"rows": rows, "max_dt": max_dt}
+                except Exception:
+                    continue
+    except Exception:
+        return {}
+    finally:
+        conn.close()
     return stats
 
 

@@ -1,9 +1,14 @@
-"""data_collect 插件:按数据集目录采集并幂等写入 market.duckdb。
+"""data_collect 插件:按数据集目录采集并幂等写入 market.duckdb/PG。
 params: {dataset_key, args?: {symbols?, interval_sec?, ...}}
 dt = ctx.data_interval_end 的日期(手动/无调度上下文时取当天)。
 token 数据集:SystemSetting(tushare_token)经 ctx 注入采集器(子进程无 ORM 会话,
 插件运行于 task_runner 进程内,用 stdlib sqlite3 只读 meta.db)。"""
 from datetime import datetime
+
+
+def _market_engine(env) -> str:
+    """读取 env 的 market_engine 配置。"""
+    return getattr(env, "market_engine", "postgres") or "postgres"
 
 
 def _system_setting(db_path, key: str) -> str | None:
@@ -47,5 +52,11 @@ def execute(params: dict, ctx: dict, env) -> dict:
     end = ctx.get("data_interval_end")
     dt = end[:10] if end else datetime.now().strftime("%Y-%m-%d")
     columns, rows = ds.fetch(params.get("args") or {}, ctx)
-    n = enqueue(env, ds.target_table, dt, columns, rows)
+
+    if _market_engine(env) == "postgres":
+        from ..collectors.writer import write_market
+        n = write_market(env, ds.target_table, dt, columns, rows)
+    else:
+        from ..collectors.writer_queue import enqueue
+        n = enqueue(env, ds.target_table, dt, columns, rows)
     return {"table": ds.target_table, "rows": n, "dt": dt}

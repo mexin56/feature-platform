@@ -84,20 +84,37 @@ def _register_views(con, db, settings, pid) -> list[str]:
 
 
 def _query_duckdb(db, settings, pid, sql, limit):
-    import duckdb
+    import duckdb as _d
 
-    con = duckdb.connect()
+    # PostgreSQL 模式
+    if getattr(settings, "market_engine", "postgres") == "postgres":
+        import psycopg2 as _pg
+
+        conn = _pg.connect(settings.pg_url)
+        try:
+            with conn.cursor() as cur:
+                # PG 中表在 public schema 下,替换 market. 前缀
+                fixed_sql = sql.replace("market.", "").replace("`market.", "`")
+                cur.execute(fixed_sql)
+                rows = cur.fetchmany(limit)
+                cols = [c[0] for c in cur.description] if cur.description else []
+                return cols, [[_cell(v) for v in r] for r in rows], []
+        except Exception as e:
+            raise HTTPException(400, f"查询失败: {e}") from e
+        finally:
+            conn.close()
+
+    # DuckDB 模式(旧)
+    con = _d.connect()
     try:
         views = _register_views(con, db, settings, pid)
         try:
             con.execute(f"ATTACH '{Path(settings.market_db).as_posix()}' AS market (READ_ONLY)")
         except Exception:
-            # ATTACH 失败(主进程正 drain 写队列持锁) → 在独立的直连上执行
             try:
-                # 注意:不能指定 read_only=True,否则 DUCKDB 会因"不同配置"报错
-                market_con = duckdb.connect(str(settings.market_db))
+                market_con = _d.connect(str(settings.market_db))
             except Exception as e2:
-                raise HTTPException(400, f"market.duckdb 暂不可用: {e2}")
+                raise HTTPException(400, f"market.duckdb 暂不可用: {e2}") from e2
             try:
                 fixed_sql = sql.replace("market.", "").replace("`market.", "`")
                 cur = market_con.execute(fixed_sql)
@@ -112,7 +129,7 @@ def _query_duckdb(db, settings, pid, sql, limit):
         return cols, [[_cell(v) for v in r] for r in rows], views
     except HTTPException:
         raise
-    except Exception as e:  # noqa: BLE001  用户 SQL 错误统一转 400
+    except Exception as e:
         raise HTTPException(400, f"查询失败: {e}")
     finally:
         con.close()
@@ -154,36 +171,52 @@ def catalog(engine: str, connection_id: int | None = None, db: str | None = None
                               "columns": [{"name": c[0], "dtype": c[1]} for c in cols]})
             market_tables = []
             try:
-                ok = attach_market(con, settings)
-                if ok:
-                    tbls = con.execute(
-                        "select table_name from information_schema.tables "
-                        "where table_catalog='market' and table_schema='main' "
-                        "order by table_name").fetchall()
-                    for (t,) in tbls:
-                        cols = con.execute(f'describe market."{t}"').fetchall()
-                        market_tables.append(
-                            {"name": f"market.{t}",
-                             "columns": [{"name": c[0], "dtype": c[1]} for c in cols]})
+                if getattr(settings, "market_engine", "postgres") == "postgres":
+                    # PostgreSQL 模式:直接从 PG 查表目录
+                    import psycopg2 as _pg
+                    pg_conn = _pg.connect(settings.pg_url)
+                    try:
+                        with pg_conn.cursor() as cur:
+                            cur.execute(
+                                "SELECT table_name FROM information_schema.tables "
+                                "WHERE table_schema='public' ORDER BY table_name")
+                            for (t,) in cur.fetchall():
+                                cur.execute(
+                                    "SELECT column_name, data_type FROM information_schema.columns "
+                                    "WHERE table_schema='public' AND table_name=%s ORDER BY ordinal_position", [t])
+                                cols = [{"name": r[0], "dtype": r[1]} for r in cur.fetchall()]
+                                market_tables.append({"name": f"market.{t}", "columns": cols})
+                    finally:
+                        pg_conn.close()
                 else:
-                    # 主进程持锁(写队列 drain)使 ATTACH 失败
-                    # 这时不能用 read_only 连接(不同配置被拒),用常规 connect
-                    try:
-                        market_con = duckdb.connect(str(settings.market_db))
-                    except duckdb.IOException as e:
-                        raise duckdb.Error from e  # 交给外层 except
-                    try:
-                        tbls = market_con.execute(
+                    ok = attach_market(con, settings)
+                    if ok:
+                        tbls = con.execute(
                             "select table_name from information_schema.tables "
-                            "where table_schema='main' order by table_name").fetchall()
+                            "where table_catalog='market' and table_schema='main' "
+                            "order by table_name").fetchall()
                         for (t,) in tbls:
-                            cols = market_con.execute(f'describe "{t}"').fetchall()
+                            cols = con.execute(f'describe market."{t}"').fetchall()
                             market_tables.append(
                                 {"name": f"market.{t}",
                                  "columns": [{"name": c[0], "dtype": c[1]} for c in cols]})
-                    finally:
-                        market_con.close()
-            except duckdb.Error:  # 写入期间/损坏的 market 库:降级为空,不影响 views
+                    else:
+                        try:
+                            market_con = _d.connect(str(settings.market_db))
+                        except _d.IOException as e:
+                            raise _d.Error from e
+                        try:
+                            tbls = market_con.execute(
+                                "select table_name from information_schema.tables "
+                                "where table_schema='main' order by table_name").fetchall()
+                            for (t,) in tbls:
+                                cols = market_con.execute(f'describe "{t}"').fetchall()
+                                market_tables.append(
+                                    {"name": f"market.{t}",
+                                     "columns": [{"name": c[0], "dtype": c[1]} for c in cols]})
+                        finally:
+                            market_con.close()
+            except Exception:  # noqa: BLE001  降级为空,不影响 views
                 market_tables = []
             return {"views": views, "market_tables": market_tables}
         finally:
