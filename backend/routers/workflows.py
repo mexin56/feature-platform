@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 
 from ..deps import get_current_user, get_db, get_project_id
-from ..models import Workflow, WorkflowVersion
+from ..models import FeatureGroup, TaskInstance, Workflow, WorkflowRun, WorkflowVersion
 from ..services.audit import record
 from ..services.dag import DagError, validate_dag
 
@@ -167,5 +167,37 @@ def offline(wid: int, db=Depends(get_db), user=Depends(get_current_user), pid=De
     wf = _get_in_project(db, wid, pid)
     wf.status = "offline"
     record(db, user, "offline_workflow", wf.name, project_id=pid)
+    db.commit()
+    return {"ok": True}
+
+
+@router.delete("/{wid}")
+def delete_workflow(wid: int, db=Depends(get_db),
+                    user=Depends(get_current_user), pid=Depends(get_project_id)):
+    """物理删除工作流定义(及其版本/运行实例/任务实例)。
+    先下线再删除,运行中的实例不受影响但失去父引用。"""
+    wf = _get_in_project(db, wid, pid)
+
+    # 解除 feature_group 的外键引用
+    db.execute(FeatureGroup.__table__.update()
+               .where(FeatureGroup.workflow_id == wid)
+               .values(workflow_id=None, task_key=None))
+
+    # 删除 task_instances(通过 workflow_runs 关联)
+    db.execute(
+        TaskInstance.__table__.delete()
+        .where(TaskInstance.run_id.in_(
+            select(WorkflowRun.id).where(WorkflowRun.workflow_id == wid))))
+
+    # 删除 workflow_runs
+    db.execute(WorkflowRun.__table__.delete()
+               .where(WorkflowRun.workflow_id == wid))
+
+    # 删除 workflow_versions
+    db.execute(WorkflowVersion.__table__.delete()
+               .where(WorkflowVersion.workflow_id == wid))
+
+    record(db, user, "delete_workflow", wf.name, project_id=pid)
+    db.delete(wf)
     db.commit()
     return {"ok": True}

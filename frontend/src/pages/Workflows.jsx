@@ -3,6 +3,7 @@ import {
   PlayCircleOutlined,
   EditOutlined,
   RollbackOutlined,
+  DeleteOutlined,
 } from '@ant-design/icons'
 import {
   Button,
@@ -11,6 +12,7 @@ import {
   Input,
   InputNumber,
   Modal,
+  Popconfirm,
   Space,
   Switch,
   Table,
@@ -167,6 +169,22 @@ export default function Workflows() {
           >
             补数
           </Button>
+          <Popconfirm
+            title={`确认删除工作流"${row.name}"？`}
+            description="将同时删除所有运行实例和版本历史，不可恢复"
+            onConfirm={async () => {
+              try {
+                await api.del(`/api/workflows/${row.id}`)
+                message.success(`${row.name} 已删除`)
+                load()
+              } catch { /* shown by api.js */ }
+            }}
+            okText="确认删除"
+            cancelText="取消"
+            okButtonProps={{ danger: true }}
+          >
+            <Button size="small" danger icon={<DeleteOutlined />}>删除</Button>
+          </Popconfirm>
         </Space>
       ),
     },
