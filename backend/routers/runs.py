@@ -49,7 +49,24 @@ def _run_out(run: WorkflowRun) -> dict:
             "data_interval_start": run.data_interval_start.isoformat(),
             "data_interval_end": run.data_interval_end.isoformat(),
             "created_at": run.created_at.isoformat(),
-            "finished_at": run.finished_at.isoformat() if run.finished_at else None}
+            "finished_at": run.finished_at.isoformat() if run.finished_at else None,
+            "task_states": None}  # 列表页不含 task 明细
+
+
+def _compute_state(run: WorkflowRun, db) -> None:
+    """给列表页的 running 实例计算展示状态:
+       - 所有 task 为 none/queued → 显示 'queued' (等待中,任务尚未开始)
+       - 至少一个 task 为 running → 保持 'running'
+    """
+    if run.state != "running":
+        return
+    from ..models import TaskInstance
+    from sqlalchemy import select, func
+    cnt = db.scalar(
+        select(func.count(TaskInstance.id))
+        .where(TaskInstance.run_id == run.id, TaskInstance.state == "running"))
+    if cnt == 0:
+        run.state = "queued"  # 降级展示为"等待中"
 
 
 def _latest_interval(cron: str, now_local: datetime) -> tuple[datetime, datetime]:
@@ -189,6 +206,7 @@ def list_all_runs(
     rows = db.scalars(stmt).all()
     result = []
     for r in rows:
+        _compute_state(r, db)
         item = _run_out(r)
         item["workflow_name"] = wf_dict.get(r.workflow_id, "")
         result.append(item)
@@ -200,7 +218,11 @@ def list_runs(wid: int, db=Depends(get_db), pid=Depends(get_project_id)):
     _wf_in_project(db, wid, pid)
     rows = db.scalars(select(WorkflowRun).where(WorkflowRun.workflow_id == wid)
                       .order_by(WorkflowRun.id.desc()).limit(200)).all()
-    return [_run_out(r) for r in rows]
+    result = []
+    for r in rows:
+        _compute_state(r, db)
+        result.append(_run_out(r))
+    return result
 
 
 @router.get("/runs/{rid}")
