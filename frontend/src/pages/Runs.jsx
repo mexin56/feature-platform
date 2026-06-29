@@ -284,7 +284,12 @@ export default function Runs() {
         loading={loadingRuns}
         dataSource={runs}
         columns={columns}
-        pagination={{ pageSize: 20, hideOnSinglePage: true }}
+        pagination={{
+          pageSize: 20,
+          showSizeChanger: true,
+          pageSizeOptions: ['10', '20', '50', '100'],
+          hideOnSinglePage: true,
+        }}
         size="small"
         locale={{ emptyText: '暂无实例' }}
       />

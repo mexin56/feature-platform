@@ -207,7 +207,12 @@ export default function Workflows() {
         loading={loading}
         dataSource={workflows}
         columns={columns}
-        pagination={{ pageSize: 20, hideOnSinglePage: true }}
+        pagination={{
+          pageSize: 20,
+          showSizeChanger: true,
+          pageSizeOptions: ['10', '20', '50', '100'],
+          hideOnSinglePage: true,
+        }}
         size="small"
         locale={{ emptyText: '暂无工作流' }}
       />

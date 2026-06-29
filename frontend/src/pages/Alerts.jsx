@@ -97,7 +97,12 @@ export default function Alerts() {
         loading={loading}
         dataSource={alerts}
         columns={columns}
-        pagination={{ pageSize: 20, hideOnSinglePage: true }}
+        pagination={{
+          pageSize: 20,
+          showSizeChanger: true,
+          pageSizeOptions: ['10', '20', '50', '100'],
+          hideOnSinglePage: true,
+        }}
         rowClassName={(r) => (r.read ? '' : 'alert-unread')}
         locale={{ emptyText: '暂无告警' }}
       />

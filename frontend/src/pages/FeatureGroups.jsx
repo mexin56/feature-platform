@@ -220,7 +220,12 @@ export default function FeatureGroups() {
         loading={loading}
         dataSource={groups}
         columns={columns}
-        pagination={{ pageSize: 20, hideOnSinglePage: true }}
+        pagination={{
+          pageSize: 20,
+          showSizeChanger: true,
+          pageSizeOptions: ['10', '20', '50', '100'],
+          hideOnSinglePage: true,
+        }}
         size="small"
         locale={{ emptyText: '暂无特征组' }}
       />
@@ -240,7 +245,12 @@ export default function FeatureGroups() {
             rowKey="key"
             dataSource={collected}
             size="small"
-            pagination={{ pageSize: 10, hideOnSinglePage: true }}
+            pagination={{
+              pageSize: 10,
+              showSizeChanger: true,
+              pageSizeOptions: ['10', '20', '50', '100'],
+              hideOnSinglePage: true,
+            }}
             columns={[
               { title: '数据集', dataIndex: 'name', width: 200 },
               { title: '来源', dataIndex: 'source', width: 100, render: (v) => <Tag>{v}</Tag> },

@@ -131,7 +131,12 @@ export default function Dashboard() {
           size="small"
           dataSource={dash?.feature_groups ?? []}
           columns={fgColumns}
-          pagination={{ pageSize: 10, hideOnSinglePage: true }}
+          pagination={{
+            pageSize: 10,
+            showSizeChanger: true,
+            pageSizeOptions: ['10', '20', '50', '100'],
+            hideOnSinglePage: true,
+          }}
           locale={{ emptyText: '暂无特征组' }}
         />
       </Card>
