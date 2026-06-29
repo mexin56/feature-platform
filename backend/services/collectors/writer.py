@@ -68,9 +68,13 @@ def write_market(settings, table: str, dt: str, columns: list[str],
 
 
 def attach_market(con, settings) -> bool:
-    """market.duckdb 存在时只读 ATTACH 为 market 库;返回是否已挂载。"""
+    """market.duckdb 存在时只读 ATTACH 为 market 库;返回是否已挂载。
+    他人持有写锁时 ATTACH READ_ONLY 会失败,回退为直接打开内联表列表。"""
     p = Path(getattr(settings, "market_db", "") or "")
     if not str(p) or not p.exists():
         return False
-    con.execute(f"ATTACH '{p.as_posix()}' AS market (READ_ONLY)")
-    return True
+    try:
+        con.execute(f"ATTACH '{p.as_posix()}' AS market (READ_ONLY)")
+        return True
+    except Exception:  # noqa: BLE001  写锁冲突 → 降级,不阻断 catalog
+        return False
