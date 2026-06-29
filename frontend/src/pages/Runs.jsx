@@ -38,6 +38,8 @@ export default function Runs() {
   const [typeFilter, setTypeFilter] = useState(null)
   const [pageSize, setPageSize] = useState(20)
   const [actionBusy, setActionBusy] = useState({})
+  const [selectedRowKeys, setSelectedRowKeys] = useState([])
+  const [batchStopping, setBatchStopping] = useState(false)
   const navigate = useNavigate()
 
   // Ref avoids stale closure in setInterval polling
@@ -126,6 +128,24 @@ export default function Runs() {
     } finally {
       setActionBusy((b) => ({ ...b, [rid]: false }))
     }
+  }
+
+  const handleBatchStop = async () => {
+    setBatchStopping(true)
+    const ids = selectedRowKeys
+    let ok = 0, fail = 0
+    for (const rid of ids) {
+      try {
+        await api.post(`/api/runs/${rid}/stop`)
+        ok++
+      } catch {
+        fail++
+      }
+    }
+    message.success(`已终止 ${ok} 个实例${fail ? `, ${fail} 个失败` : ''}`)
+    setSelectedRowKeys([])
+    setBatchStopping(false)
+    fetchRuns(selectedWid, stateFilter, typeFilter)
   }
 
   const columns = [
@@ -293,11 +313,34 @@ export default function Runs() {
         />
       </Space>
 
+      {selectedRowKeys.length > 0 && (
+        <div style={{ marginBottom: 12, padding: '8px 12px', background: '#fff7e6', borderRadius: 6, display: 'flex', alignItems: 'center', gap: 12 }}>
+          <Typography.Text strong>已选 {selectedRowKeys.length} 个实例</Typography.Text>
+          <Popconfirm
+            title={`确认终止选中的 ${selectedRowKeys.length} 个运行中实例？`}
+            onConfirm={handleBatchStop}
+            okText="确认终止"
+            cancelText="取消"
+            okButtonProps={{ danger: true }}
+          >
+            <Button size="small" danger icon={<StopOutlined />} loading={batchStopping}>
+              批量终止
+            </Button>
+          </Popconfirm>
+          <Button size="small" onClick={() => setSelectedRowKeys([])}>取消选择</Button>
+        </div>
+      )}
+
       <Table
         rowKey="id"
         loading={loadingRuns}
         dataSource={runs}
         columns={columns}
+        rowSelection={{
+          selectedRowKeys,
+          onChange: setSelectedRowKeys,
+          getCheckboxProps: (r) => ({ disabled: r.state !== 'running' }),
+        }}
         pagination={{
           current: undefined,
           pageSize,
