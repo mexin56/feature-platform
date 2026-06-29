@@ -1,6 +1,7 @@
 """market.duckdb 写入器:统一附加 dt/collected_at 列,按 dt 幂等(先删后插)。
 首跑按首个非空值推断列类型建表;无 pandas 依赖,executemany 参数化插入。"""
 import re
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -25,7 +26,8 @@ def _col_type(rows: list[tuple], idx: int) -> str:
 
 def write_market(settings, table: str, dt: str, columns: list[str],
                  rows: list[tuple], collected_at: str | None = None) -> int:
-    """写入(覆盖当日)market.duckdb 的 {table},返回插入行数。"""
+    """写入(覆盖当日)market.duckdb 的 {table},返回插入行数。
+    写锁冲突时自动重试(最多 3 次,指数退避 1/2/4s)。"""
     import duckdb
 
     if not TABLE_RE.match(table or ""):
@@ -43,28 +45,37 @@ def write_market(settings, table: str, dt: str, columns: list[str],
     db_path.parent.mkdir(parents=True, exist_ok=True)
     full_cols = list(columns) + ["dt", "collected_at"]
     data = [tuple(r) + (dt, collected_at) for r in rows]
-    try:
-        con = duckdb.connect(str(db_path))
-    except duckdb.IOException as e:  # duckdb 单写多读:写锁被其他任务占用
-        raise RuntimeError(
-            "market.duckdb 正被其他任务写入,请稍后重试(任务将自动重试)") from e
-    try:
-        exists = con.execute(
-            "select count(*) from information_schema.tables "
-            "where table_schema='main' and table_name=?", [table]).fetchone()[0]
-        if exists:
-            con.execute(f"delete from {table} where dt = ?", [dt])
-        else:
-            types = [_col_type(data, i) for i in range(len(columns))] + ["VARCHAR"] * 2
-            cols_sql = ", ".join(f'"{c}" {t}' for c, t in zip(full_cols, types))
-            con.execute(f"create table {table} ({cols_sql})")
-        if data:
-            collist = ", ".join(f'"{c}"' for c in full_cols)
-            ph = ", ".join("?" for _ in full_cols)
-            con.executemany(f"insert into {table} ({collist}) values ({ph})", data)
-        return len(data)
-    finally:
-        con.close()
+
+    max_retries = 3
+    last_err = None
+    for attempt in range(max_retries + 1):
+        if attempt:
+            time.sleep(attempt)  # 1s, 2s, 4s
+        try:
+            con = duckdb.connect(str(db_path))
+        except duckdb.IOException as e:
+            last_err = e
+            continue
+        try:
+            exists = con.execute(
+                "select count(*) from information_schema.tables "
+                "where table_schema='main' and table_name=?", [table]).fetchone()[0]
+            if exists:
+                con.execute(f"delete from {table} where dt = ?", [dt])
+            else:
+                types = [_col_type(data, i) for i in range(len(columns))] + ["VARCHAR"] * 2
+                cols_sql = ", ".join(f'"{c}" {t}' for c, t in zip(full_cols, types))
+                con.execute(f"create table {table} ({cols_sql})")
+            if data:
+                collist = ", ".join(f'"{c}"' for c in full_cols)
+                ph = ", ".join("?" for _ in full_cols)
+                con.executemany(f"insert into {table} ({collist}) values ({ph})", data)
+            return len(data)
+        finally:
+            con.close()
+
+    raise RuntimeError(
+        f"market.duckdb 正被其他任务写入,重试 {max_retries} 次仍失败") from last_err
 
 
 def attach_market(con, settings) -> bool:

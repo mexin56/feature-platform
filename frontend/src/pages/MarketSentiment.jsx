@@ -54,146 +54,155 @@ export default function MarketSentiment() {
   const load = async () => {
     setLoading(true)
     try {
-      const r1 = await api.get('/api/query/catalog?engine=duckdb')
-      const mt = (r1.market_tables ?? []).map(t => typeof t === 'string' ? t : t.name)
+      // 每个数据块独立 try/catch,不依赖 catalog 结果
+      /* ── 市场情绪 ── */
+      ;(async () => {
+        try {
+          const me = await api.post('/api/query', {
+            engine: 'duckdb',
+            sql: `SELECT * FROM market.ods_eastmoney_market_emotion
+  WHERE trade_date = (SELECT MAX(trade_date) FROM market.ods_eastmoney_market_emotion)
+  LIMIT 1`,
+            limit: 1,
+          })
+          if (me.columns && me.rows && me.rows.length) {
+            setEmotion(Object.fromEntries(me.columns.map((c, i) => [c, me.rows[0][i]])))
+          }
+        } catch {} // eslint-disable-line
+      })()
 
-      if (mt.some(t => t.includes('ods_eastmoney_market_emotion'))) {
-        const me = await api.post('/api/query', {
-          engine: 'duckdb',
-          sql: `SELECT * FROM market.ods_eastmoney_market_emotion
-WHERE trade_date = (SELECT MAX(trade_date) FROM market.ods_eastmoney_market_emotion)
-LIMIT 1`,
-          limit: 1,
-        })
-        if (me.columns && me.rows && me.rows.length) {
-          setEmotion(Object.fromEntries(me.columns.map((c, i) => [c, me.rows[0][i]])))
-        }
-      }
-
-      if (mt.some(t => t.includes('ods_akshare_index_daily'))) {
-        const idx = await api.post('/api/query', {
-          engine: 'duckdb',
-          sql: `SELECT trade_date, index_code, index_name, close
-FROM market.ods_akshare_index_daily
-WHERE index_code IN ('sh000016', 'sh000300')
-ORDER BY trade_date`,
-          limit: 200,
-        })
-        if (idx.columns && idx.rows && idx.rows.length) {
-          setFearGreed(idx.rows.map(r => Object.fromEntries(idx.columns.map((c, i) => [c, r[i]]))))
-        }
-      }
+      /* ── 指数行情(恐贪) ── */
+      ;(async () => {
+        try {
+          const idx = await api.post('/api/query', {
+            engine: 'duckdb',
+            sql: `SELECT trade_date, index_code, index_name, close
+  FROM market.ods_akshare_index_daily
+  WHERE index_code IN ('sh000016', 'sh000300')
+  ORDER BY trade_date`,
+            limit: 200,
+          })
+          if (idx.columns && idx.rows && idx.rows.length) {
+            setFearGreed(idx.rows.map(r => Object.fromEntries(idx.columns.map((c, i) => [c, r[i]]))))
+          }
+        } catch {} // eslint-disable-line
+      })()
 
       /* ── CFFEX 持仓数据 ── */
-      if (mt.some(t => t.includes('ods_akshare_cffex_rank_table'))) {
-        // 今日排行
-        const cf = await api.post('/api/query', {
-          engine: 'duckdb',
-          sql: `SELECT trade_date, variety, contract, rank,
-  long_party_name, long_open_interest, long_open_interest_chg,
-  short_party_name, short_open_interest, short_open_interest_chg
-FROM market.ods_akshare_cffex_rank_table
-WHERE trade_date = (SELECT MAX(trade_date) FROM market.ods_akshare_cffex_rank_table)
-  AND variety IN ('IF', 'IC', 'IH', 'IM')
-ORDER BY variety, contract, rank`,
-          limit: 300,
-        })
-        if (cf.columns && cf.rows && cf.rows.length) {
-          // 按品种分组统计
-          const byVariety = {}
-          cf.rows.forEach(r => {
-            const row = Object.fromEntries(cf.columns.map((c, i) => [c, r[i]]))
-            const v = row.variety
-            if (!byVariety[v]) byVariety[v] = []
-            byVariety[v].push(row)
+      ;(async () => {
+        try {
+          const cf = await api.post('/api/query', {
+            engine: 'duckdb',
+            sql: `SELECT trade_date, variety, contract, rank,
+    long_party_name, long_open_interest, long_open_interest_chg,
+    short_party_name, short_open_interest, short_open_interest_chg
+  FROM market.ods_akshare_cffex_rank_table
+  WHERE trade_date = (SELECT MAX(trade_date) FROM market.ods_akshare_cffex_rank_table)
+    AND variety IN ('IF', 'IC', 'IH', 'IM')
+  ORDER BY variety, contract, rank`,
+            limit: 300,
           })
-          const topByVariety = {}
-          for (const [v, rows] of Object.entries(byVariety)) {
-            const today = rows[0].trade_date
-            const topLong = sumCffexByParty(rows, 'long')
-            const topShort = sumCffexByParty(rows, 'short')
-            topByVariety[v] = mergeLongShort(topLong, topShort).slice(0, 15).map(r => ({ ...r, trade_date: today }))
+          if (cf.columns && cf.rows && cf.rows.length) {
+            const byVariety = {}
+            cf.rows.forEach(r => {
+              const row = Object.fromEntries(cf.columns.map((c, i) => [c, r[i]]))
+              const v = row.variety
+              if (!byVariety[v]) byVariety[v] = []
+              byVariety[v].push(row)
+            })
+            const topByVariety = {}
+            for (const [v, rows] of Object.entries(byVariety)) {
+              const today = rows[0].trade_date
+              const topLong = sumCffexByParty(rows, 'long')
+              const topShort = sumCffexByParty(rows, 'short')
+              topByVariety[v] = mergeLongShort(topLong, topShort).slice(0, 15).map(r => ({ ...r, trade_date: today }))
+            }
+            setCffexTop(topByVariety)
           }
-          setCffexTop(topByVariety)
-        }
 
-        // 各品种 中信 vs 其他 每日净增减（按品种分列）
-        const trend = await api.post('/api/query', {
-          engine: 'duckdb',
-          sql: `SELECT trade_date,
-  SUM(CASE WHEN variety='IF' AND long_party_name LIKE '%中信%' THEN long_open_interest_chg ELSE 0 END)
-    - SUM(CASE WHEN variety='IF' AND short_party_name LIKE '%中信%' THEN short_open_interest_chg ELSE 0 END)
-    AS citic_if_net_chg,
-  SUM(CASE WHEN variety='IF' AND long_party_name NOT LIKE '%中信%' THEN long_open_interest_chg ELSE 0 END)
-    - SUM(CASE WHEN variety='IF' AND short_party_name NOT LIKE '%中信%' THEN short_open_interest_chg ELSE 0 END)
-    AS other_if_net_chg,
-  SUM(CASE WHEN variety='IC' AND long_party_name LIKE '%中信%' THEN long_open_interest_chg ELSE 0 END)
-    - SUM(CASE WHEN variety='IC' AND short_party_name LIKE '%中信%' THEN short_open_interest_chg ELSE 0 END)
-    AS citic_ic_net_chg,
-  SUM(CASE WHEN variety='IC' AND long_party_name NOT LIKE '%中信%' THEN long_open_interest_chg ELSE 0 END)
-    - SUM(CASE WHEN variety='IC' AND short_party_name NOT LIKE '%中信%' THEN short_open_interest_chg ELSE 0 END)
-    AS other_ic_net_chg,
-  SUM(CASE WHEN variety='IH' AND long_party_name LIKE '%中信%' THEN long_open_interest_chg ELSE 0 END)
-    - SUM(CASE WHEN variety='IH' AND short_party_name LIKE '%中信%' THEN short_open_interest_chg ELSE 0 END)
-    AS citic_ih_net_chg,
-  SUM(CASE WHEN variety='IH' AND long_party_name NOT LIKE '%中信%' THEN long_open_interest_chg ELSE 0 END)
-    - SUM(CASE WHEN variety='IH' AND short_party_name NOT LIKE '%中信%' THEN short_open_interest_chg ELSE 0 END)
-    AS other_ih_net_chg,
-  SUM(CASE WHEN variety='IM' AND long_party_name LIKE '%中信%' THEN long_open_interest_chg ELSE 0 END)
-    - SUM(CASE WHEN variety='IM' AND short_party_name LIKE '%中信%' THEN short_open_interest_chg ELSE 0 END)
-    AS citic_im_net_chg,
-  SUM(CASE WHEN variety='IM' AND long_party_name NOT LIKE '%中信%' THEN long_open_interest_chg ELSE 0 END)
-    - SUM(CASE WHEN variety='IM' AND short_party_name NOT LIKE '%中信%' THEN short_open_interest_chg ELSE 0 END)
-    AS other_im_net_chg
-FROM market.ods_akshare_cffex_rank_table
-WHERE variety IN ('IF', 'IC', 'IH', 'IM') AND rank <= 20
-GROUP BY trade_date
-ORDER BY trade_date`,
-          limit: 100,
-        })
-        if (trend.columns && trend.rows && trend.rows.length) {
-          setCffexTrend(trend.rows.map(r => Object.fromEntries(trend.columns.map((c, i) => [c, r[i]]))))
-        }
-      }
-
-      if (mt.some(t => t.includes('ods_eastmoney_lhb_detail'))) {
-        const lhb = await api.post('/api/query', {
-          engine: 'duckdb',
-          sql: `SELECT trade_date, ts_code, name, close, change_pct,
-  billboard_buy_amt, billboard_sell_amt, billboard_net_amt,
-  buy_seat, sell_seat, explain
-FROM market.ods_eastmoney_lhb_detail
-WHERE trade_date = (SELECT MAX(trade_date) FROM market.ods_eastmoney_lhb_detail)
-ORDER BY ABS(billboard_net_amt) DESC
-LIMIT 100`,
-          limit: 100,
-        })
-        if (lhb.columns && lhb.rows) {
-          const rows = lhb.rows.map(r => Object.fromEntries(lhb.columns.map((c, i) => [c, r[i]])))
-          setLhbList(rows)
-          let instBuy = 0, instSell = 0, totalNet = 0
-          rows.forEach(r => {
-            const bCnt = String(r.buy_seat || '').split('3').length - 1
-            const sCnt = String(r.sell_seat || '').split('3').length - 1
-            instBuy += bCnt; instSell += sCnt
-            totalNet += Number(r.billboard_net_amt || 0)
+          const trend = await api.post('/api/query', {
+            engine: 'duckdb',
+            sql: `SELECT trade_date,
+    SUM(CASE WHEN variety='IF' AND long_party_name LIKE '%中信%' THEN long_open_interest_chg ELSE 0 END)
+      - SUM(CASE WHEN variety='IF' AND short_party_name LIKE '%中信%' THEN short_open_interest_chg ELSE 0 END)
+      AS citic_if_net_chg,
+    SUM(CASE WHEN variety='IF' AND long_party_name NOT LIKE '%中信%' THEN long_open_interest_chg ELSE 0 END)
+      - SUM(CASE WHEN variety='IF' AND short_party_name NOT LIKE '%中信%' THEN short_open_interest_chg ELSE 0 END)
+      AS other_if_net_chg,
+    SUM(CASE WHEN variety='IC' AND long_party_name LIKE '%中信%' THEN long_open_interest_chg ELSE 0 END)
+      - SUM(CASE WHEN variety='IC' AND short_party_name LIKE '%中信%' THEN short_open_interest_chg ELSE 0 END)
+      AS citic_ic_net_chg,
+    SUM(CASE WHEN variety='IC' AND long_party_name NOT LIKE '%中信%' THEN long_open_interest_chg ELSE 0 END)
+      - SUM(CASE WHEN variety='IC' AND short_party_name NOT LIKE '%中信%' THEN short_open_interest_chg ELSE 0 END)
+      AS other_ic_net_chg,
+    SUM(CASE WHEN variety='IH' AND long_party_name LIKE '%中信%' THEN long_open_interest_chg ELSE 0 END)
+      - SUM(CASE WHEN variety='IH' AND short_party_name LIKE '%中信%' THEN short_open_interest_chg ELSE 0 END)
+      AS citic_ih_net_chg,
+    SUM(CASE WHEN variety='IH' AND long_party_name NOT LIKE '%中信%' THEN long_open_interest_chg ELSE 0 END)
+      - SUM(CASE WHEN variety='IH' AND short_party_name NOT LIKE '%中信%' THEN short_open_interest_chg ELSE 0 END)
+      AS other_ih_net_chg,
+    SUM(CASE WHEN variety='IM' AND long_party_name LIKE '%中信%' THEN long_open_interest_chg ELSE 0 END)
+      - SUM(CASE WHEN variety='IM' AND short_party_name LIKE '%中信%' THEN short_open_interest_chg ELSE 0 END)
+      AS citic_im_net_chg,
+    SUM(CASE WHEN variety='IM' AND long_party_name NOT LIKE '%中信%' THEN long_open_interest_chg ELSE 0 END)
+      - SUM(CASE WHEN variety='IM' AND short_party_name NOT LIKE '%中信%' THEN short_open_interest_chg ELSE 0 END)
+      AS other_im_net_chg
+  FROM market.ods_akshare_cffex_rank_table
+  WHERE variety IN ('IF', 'IC', 'IH', 'IM') AND rank <= 20
+  GROUP BY trade_date
+  ORDER BY trade_date`,
+            limit: 100,
           })
-          setLhbSummary({ instBuy, instSell, totalNet: totalNet.toFixed(0), count: rows.length })
-        }
-      }
+          if (trend.columns && trend.rows && trend.rows.length) {
+            setCffexTrend(trend.rows.map(r => Object.fromEntries(trend.columns.map((c, i) => [c, r[i]]))))
+          }
+        } catch {} // eslint-disable-line
+      })()
 
-      if (mt.some(t => t.includes('ods_eastmoney_margin_summary'))) {
-        const mg = await api.post('/api/query', {
-          engine: 'duckdb',
-          sql: `SELECT dim_date, rzye, rzmre, rqye, rzrqye
-FROM market.ods_eastmoney_margin_summary
-ORDER BY dim_date`,
-          limit: 30,
-        })
-        if (mg.columns && mg.rows && mg.rows.length) {
-          setMarginData(mg.rows.map(r => Object.fromEntries(mg.columns.map((c, i) => [c, r[i]]))))
-        }
-      }
+      /* ── 龙虎榜 ── */
+      ;(async () => {
+        try {
+          const lhb = await api.post('/api/query', {
+            engine: 'duckdb',
+            sql: `SELECT trade_date, ts_code, name, close, change_pct,
+    billboard_buy_amt, billboard_sell_amt, billboard_net_amt,
+    buy_seat, sell_seat, explain
+  FROM market.ods_eastmoney_lhb_detail
+  WHERE trade_date = (SELECT MAX(trade_date) FROM market.ods_eastmoney_lhb_detail)
+  ORDER BY ABS(billboard_net_amt) DESC
+  LIMIT 100`,
+            limit: 100,
+          })
+          if (lhb.columns && lhb.rows) {
+            const rows = lhb.rows.map(r => Object.fromEntries(lhb.columns.map((c, i) => [c, r[i]])))
+            setLhbList(rows)
+            let instBuy = 0, instSell = 0, totalNet = 0
+            rows.forEach(r => {
+              const bCnt = String(r.buy_seat || '').split('3').length - 1
+              const sCnt = String(r.sell_seat || '').split('3').length - 1
+              instBuy += bCnt; instSell += sCnt
+              totalNet += Number(r.billboard_net_amt || 0)
+            })
+            setLhbSummary({ instBuy, instSell, totalNet: totalNet.toFixed(0), count: rows.length })
+          }
+        } catch {} // eslint-disable-line
+      })()
+
+      /* ── 融资融券 ── */
+      ;(async () => {
+        try {
+          const mg = await api.post('/api/query', {
+            engine: 'duckdb',
+            sql: `SELECT dim_date, rzye, rzmre, rqye, rzrqye
+  FROM market.ods_eastmoney_margin_summary
+  ORDER BY dim_date`,
+            limit: 30,
+          })
+          if (mg.columns && mg.rows && mg.rows.length) {
+            setMarginData(mg.rows.map(r => Object.fromEntries(mg.columns.map((c, i) => [c, r[i]]))))
+          }
+        } catch {} // eslint-disable-line
+      })()
 
     } catch (e) {
       console.warn('MarketSentiment load error:', e)
