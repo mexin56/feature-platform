@@ -91,13 +91,13 @@ def _query_duckdb(db, settings, pid, sql, limit):
         views = _register_views(con, db, settings, pid)
         try:
             con.execute(f"ATTACH '{Path(settings.market_db).as_posix()}' AS market (READ_ONLY)")
-            cur = con.execute(sql)
-            rows = cur.fetchmany(limit)
-            cols = [c[0] for c in cur.description] if cur.description else []
-            return cols, [[_cell(v) for v in r] for r in rows], views
         except Exception:
-            # ATTACH 失败(写锁等) → 在直连上执行(去掉 market. 前缀)
-            market_con = duckdb.connect(str(settings.market_db), read_only=True)
+            # ATTACH 失败(主进程正 drain 写队列持锁) → 在独立的直连上执行
+            try:
+                # 注意:不能指定 read_only=True,否则 DUCKDB 会因"不同配置"报错
+                market_con = duckdb.connect(str(settings.market_db))
+            except Exception as e2:
+                raise HTTPException(400, f"market.duckdb 暂不可用: {e2}")
             try:
                 fixed_sql = sql.replace("market.", "").replace("`market.", "`")
                 cur = market_con.execute(fixed_sql)
@@ -106,6 +106,10 @@ def _query_duckdb(db, settings, pid, sql, limit):
                 return cols, [[_cell(v) for v in r] for r in rows], views
             finally:
                 market_con.close()
+        cur = con.execute(sql)
+        rows = cur.fetchmany(limit)
+        cols = [c[0] for c in cur.description] if cur.description else []
+        return cols, [[_cell(v) for v in r] for r in rows], views
     except HTTPException:
         raise
     except Exception as e:  # noqa: BLE001  用户 SQL 错误统一转 400
