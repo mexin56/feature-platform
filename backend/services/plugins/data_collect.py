@@ -28,7 +28,7 @@ def _system_setting(db_path, key: str) -> str | None:
 def execute(params: dict, ctx: dict, env) -> dict:
     from ..collectors import CATALOG, available
     from ..collectors.custom import resolve_custom
-    from ..collectors.writer import write_market
+    from ..collectors.writer_queue import enqueue
 
     key = params.get("dataset_key") or ""
     # override/custom 优先:用户配置永远优先于内置 CATALOG
@@ -47,5 +47,5 @@ def execute(params: dict, ctx: dict, env) -> dict:
     end = ctx.get("data_interval_end")
     dt = end[:10] if end else datetime.now().strftime("%Y-%m-%d")
     columns, rows = ds.fetch(params.get("args") or {}, ctx)
-    n = write_market(env, ds.target_table, dt, columns, rows)
+    n = enqueue(env, ds.target_table, dt, columns, rows)
     return {"table": ds.target_table, "rows": n, "dt": dt}

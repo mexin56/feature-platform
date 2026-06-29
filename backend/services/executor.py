@@ -61,6 +61,21 @@ class Executor:
                 p.start()
                 self._procs[tid] = p
 
+        # drain 写队列(子进程入队的数据 → 单线程写入 DuckDB)
+        self._drain_queue()
+
+    def _drain_queue(self) -> None:
+        """从 write_queue 取出 pending 条目依次写入 market.duckdb。"""
+        from .collectors.writer_queue import drain_queue, pending_count
+
+        cnt = pending_count(self.settings)
+        if not cnt:
+            return
+        n = drain_queue(self.settings, max_batch=10)
+        if n:
+            import logging
+            logging.getLogger("feature-platform").info(f"写队列 drain {n} 条(pending {cnt})")
+
     # ---- 回收与超时 ----
     def _reap_processes(self) -> None:
         if not self._procs:

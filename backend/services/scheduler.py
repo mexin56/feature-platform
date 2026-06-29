@@ -284,5 +284,19 @@ class Scheduler:
         self.schedule_cron_runs()
         self.advance_runs()
         self.reap_orphans()
+        self._drain_write_queue()
         self.check_sla()
         self.check_materialize_lag()
+
+    def _drain_write_queue(self) -> None:
+        """清理积压的写队列条目。"""
+        if not self.settings:
+            return
+        from .collectors.writer_queue import pending_count, drain_queue
+        cnt = pending_count(self.settings)
+        if cnt:
+            n = drain_queue(self.settings, max_batch=10)
+            if n:
+                import logging
+                logging.getLogger("feature-platform").info(
+                    f"scheduler drain 写队列 {n} 条(pending {cnt})")
