@@ -106,15 +106,16 @@ def backfill(wid: int, body: BackfillIn, db=Depends(get_db),
     sched = Scheduler(None)
 
     # 将补数区间转换到工作流时区的 naive 时间
-    # 注意:用户选的日期(如 6/29 周一)期望包含当天的 cron 触发区间
-    # cron=0 17 * * 1-5 在 17:00 触发,每个触发对应一个区间(昨天17:00~今天17:00)
-    # 用户选 end=6/29(end_local=6/29 00:00),但 6/29 17:00 才产生区间
-    # 所以将 end 延长到次日,使当日 17:00 落在区间内
+    # note: cron 触发在 HH:MM,用户选的日期范围期望包含结束日当天的区间
+    # 区间 = (前一个 cron 触发, 当前 cron 触发), 结束日的区间需要
+    # end > 结束日的 cron 触发 + 1 个完整周期
+    # 通用修复: end + 2 天确保覆盖,再按截止时间过滤多余区间
     from zoneinfo import ZoneInfo
 
     tz = ZoneInfo(wf.timezone)
     start_local = body.start_date.astimezone(tz).replace(tzinfo=None)
-    end_local = body.end_date.astimezone(tz).replace(tzinfo=None) + timedelta(days=1)
+    end_local_bare = body.end_date.astimezone(tz).replace(tzinfo=None)
+    end_local = end_local_bare + timedelta(days=2)
 
     it = croniter(wf.cron, start_local - timedelta(microseconds=1))
     a = it.get_next(datetime)
@@ -125,13 +126,19 @@ def backfill(wid: int, body: BackfillIn, db=Depends(get_db),
             break
         pairs.append((a, b))
         a = b
+
+    # 过滤:只保留区间结束(b)在截止时间之前的
+    # 截止 = 结束日 + 1天 + 18h(确保涵盖任何 HH:MM 的 cron 触发)
+    cutoff = end_local_bare + timedelta(days=1, hours=18)
+    pairs = [(s, e) for s, e in pairs if e <= cutoff]
     start = body.start_date
     end = body.end_date
     record(db, user, "backfill", f"{start}~{end} x{len(pairs)}", project_id=pid)
     if not pairs:
         db.commit()
-        return {"created": 0}
+        return {"created": 0, "skipped": 0, "total": len(pairs)}
     created = 0
+    skipped = 0
     for a, b in pairs:
         dup = db.scalar(select(WorkflowRun.id).where(
             WorkflowRun.workflow_id == wf.id, WorkflowRun.run_type == "backfill",
@@ -140,8 +147,10 @@ def backfill(wid: int, body: BackfillIn, db=Depends(get_db),
             sched.create_run(db, wf, ver, "backfill", a, b,
                              triggered_by=user.id, parallel_degree=body.parallel)
             created += 1
+        else:
+            skipped += 1
     db.commit()
-    return {"created": created}
+    return {"created": created, "skipped": skipped, "total": len(pairs)}
 
 
 @router.get("/runs")

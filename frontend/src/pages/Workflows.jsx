@@ -100,7 +100,7 @@ export default function Workflows() {
         end_date: end.toISOString(),
         parallel: values.parallel ?? 1,
       })
-      message.success(`补数完成,创建了 ${result.created} 个实例`)
+      message.success(`补数完成,创建了 ${result.created} 个实例${result.skipped > 0 ? `, ${result.skipped} 个已存在跳过` : ''}`)
       setBackfillModal(null)
       backfillForm.resetFields()
     } catch {
