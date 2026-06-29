@@ -139,22 +139,29 @@ def catalog(engine: str, connection_id: int | None = None, db: str | None = None
             market_tables = []
             try:
                 ok = attach_market(con, settings)
-                if not ok:
-                    # 写锁冲突导致 ATTACH READ_ONLY 失败 → 另开连接直读
-                    market_con = duckdb.connect(str(settings.market_db), read_only=True)
-                else:
-                    market_con = con
-                try:
-                    tbls = market_con.execute(
+                if ok:
+                    tbls = con.execute(
                         "select table_name from information_schema.tables "
-                        "where table_schema='main' order by table_name").fetchall()
+                        "where table_catalog='market' and table_schema='main' "
+                        "order by table_name").fetchall()
                     for (t,) in tbls:
-                        cols = market_con.execute(f'describe "{t}"').fetchall()
+                        cols = con.execute(f'describe market."{t}"').fetchall()
                         market_tables.append(
                             {"name": f"market.{t}",
                              "columns": [{"name": c[0], "dtype": c[1]} for c in cols]})
-                finally:
-                    if market_con is not con:
+                else:
+                    # 写锁冲突 ATTACH 失败 → 另开直读连接(无锁冲突时可用)
+                    market_con = duckdb.connect(str(settings.market_db), read_only=True)
+                    try:
+                        tbls = market_con.execute(
+                            "select table_name from information_schema.tables "
+                            "where table_schema='main' order by table_name").fetchall()
+                        for (t,) in tbls:
+                            cols = market_con.execute(f'describe "{t}"').fetchall()
+                            market_tables.append(
+                                {"name": f"market.{t}",
+                                 "columns": [{"name": c[0], "dtype": c[1]} for c in cols]})
+                    finally:
                         market_con.close()
             except duckdb.Error:  # 写入期间/损坏的 market 库:降级为空,不影响 views
                 market_tables = []
