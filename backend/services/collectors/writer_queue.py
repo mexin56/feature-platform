@@ -115,28 +115,33 @@ def drain_queue(settings, max_batch: int = 10) -> int:
         full_cols = list(columns) + ["dt", "collected_at"]
         full_data = [tuple(r) + (dt, collected_at) for r in data]
 
-        try:
-            duck = duckdb.connect(str(duck_path))
+        retries = 3
+        for attempt in range(retries):
             try:
-                exists = duck.execute(
-                    "select count(*) from information_schema.tables "
-                    "where table_schema='main' and table_name=?", [table_name]).fetchone()[0]
-                if exists:
-                    duck.execute(f"delete from {table_name} where dt = ?", [dt])
-                else:
-                    types = [_col_type(full_data, i) for i in range(len(columns))] + ["VARCHAR"] * 2
-                    cols_sql = ", ".join(f'"{c}" {t}' for c, t in zip(full_cols, types))
-                    duck.execute(f"create table {table_name} ({cols_sql})")
-                if full_data:
-                    collist = ", ".join(f'"{c}"' for c in full_cols)
-                    ph = ", ".join("?" for _ in full_cols)
-                    duck.executemany(f"insert into {table_name} ({collist}) values ({ph})", full_data)
-            finally:
-                duck.close()
-        except Exception:
-            # DuckDB 写锁冲突等异常 → 保留队列中,下次重试
-            time.sleep(1)
-            continue
+                duck = duckdb.connect(str(duck_path))
+                try:
+                    exists = duck.execute(
+                        "select count(*) from information_schema.tables "
+                        "where table_schema='main' and table_name=?", [table_name]).fetchone()[0]
+                    if exists:
+                        duck.execute(f"delete from {table_name} where dt = ?", [dt])
+                    else:
+                        types = [_col_type(full_data, i) for i in range(len(columns))] + ["VARCHAR"] * 2
+                        cols_sql = ", ".join(f'"{c}" {t}' for c, t in zip(full_cols, types))
+                        duck.execute(f"create table {table_name} ({cols_sql})")
+                    if full_data:
+                        collist = ", ".join(f'"{c}"' for c in full_cols)
+                        ph = ", ".join("?" for _ in full_cols)
+                        duck.executemany(f"insert into {table_name} ({collist}) values ({ph})", full_data)
+                finally:
+                    duck.close()
+                break
+            except Exception:
+                if attempt < retries - 1:
+                    time.sleep(1)
+                    continue
+                # 重试耗尽 → 跳过该条目,下个 drain 再试
+                break
 
         # 标记为 done
         con2 = sqlite3.connect(str(db_path))

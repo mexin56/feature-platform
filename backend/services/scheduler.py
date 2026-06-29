@@ -110,9 +110,14 @@ class Scheduler:
             runs = db.scalars(select(WorkflowRun).where(WorkflowRun.state == "running")
                               .order_by(WorkflowRun.workflow_id,
                                         WorkflowRun.data_interval_start)).all()
+            if not runs:
+                return
             gated = self._gate(db, runs)
+            if not gated:
+                return
             for run in gated:
-                self._advance_one(db, run)
+                if run.state == "running":
+                    self._advance_one(db, run)
             db.commit()
 
     def _gate(self, db, runs: list) -> list:
