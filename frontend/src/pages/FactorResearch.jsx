@@ -31,10 +31,16 @@ import {
   Typography,
   message,
 } from 'antd'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import * as echarts from 'echarts/core'
+import { LineChart } from 'echarts/charts'
+import { GridComponent, LegendComponent, TooltipComponent } from 'echarts/components'
+import { CanvasRenderer } from 'echarts/renderers'
 import dayjs from 'dayjs'
 
 import { api } from '../api.js'
+
+echarts.use([CanvasRenderer, GridComponent, LegendComponent, LineChart, TooltipComponent])
 
 const { RangePicker } = DatePicker
 
@@ -231,6 +237,30 @@ export default function FactorResearch() {
   const [strategyBusy, setStrategyBusy] = useState(false)
   const [btResult, setBtResult] = useState(null)
   const [btForm] = Form.useForm()
+  const btChartRef = useRef(null)
+
+  /* ── 回测收益对比图 ── */
+  useEffect(() => {
+    if (!btResult?.daily_returns?.length || !btChartRef.current) return
+    const chart = echarts.init(btChartRef.current)
+    const data = btResult.daily_returns
+    const dates = data.map(r => r.trade_date)
+    let cumStrat = 1, cumBench = 1
+    const stratLine = data.map(r => { cumStrat *= (1 + (r.strategy_return || 0)); return (cumStrat - 1) * 100 })
+    const benchLine = data.map(r => { cumBench *= (1 + (r.bench_return || 0)); return (cumBench - 1) * 100 })
+    chart.setOption({
+      tooltip: { trigger: 'axis' },
+      legend: { data: ['策略累计收益', '沪深300累计收益'], bottom: 0 },
+      grid: { left: 60, right: 20, top: 10, bottom: 40 },
+      xAxis: { type: 'category', data: dates, axisLabel: { fontSize: 10, rotate: 45 } },
+      yAxis: { type: 'value', name: '累计收益 %' },
+      series: [
+        { name: '策略累计收益', type: 'line', data: stratLine, smooth: true, lineStyle: { width: 2, color: '#cf1322' }, itemStyle: { color: '#cf1322' }, symbol: 'none' },
+        { name: '沪深300累计收益', type: 'line', data: benchLine, smooth: true, lineStyle: { width: 2, color: '#1890ff', type: 'dashed' }, itemStyle: { color: '#1890ff' }, symbol: 'none' },
+      ],
+    }, true)
+    return () => chart.dispose()
+  }, [btResult])
 
   /* ── 加载因子库 ── */
   const loadFactors = () => {
@@ -526,6 +556,31 @@ export default function FactorResearch() {
       children: (
         <div>
           <Space direction="vertical" size={16} style={{ width: '100%' }}>
+            <Card size="small" title="选择因子并设权重">
+              <Select
+                mode="multiple"
+                style={{ width: '100%' }}
+                placeholder="搜索并添加因子"
+                value={Object.keys(combineFactors)}
+                onChange={(names) => {
+                  const next = { ...combineFactors }
+                  for (const n of names) { if (!(n in next)) next[n] = 1 / names.length }
+                  for (const k of Object.keys(next)) { if (!names.includes(k)) delete next[k] }
+                  setCombineFactors(next)
+                }}
+                options={factors.map(f => ({ value: f.name, label: `${f.name_cn} (${f.name})` }))}
+                filterOption={(input, option) => option.label.toLowerCase().includes(input.toLowerCase())}
+              />
+              {Object.keys(combineFactors).map(name => (
+                <div key={name} style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <Typography.Text code style={{ minWidth: 120 }}>{name}</Typography.Text>
+                  <Slider style={{ flex: 1 }} min={0} max={1} step={0.05} value={combineFactors[name]}
+                    onChange={(v) => setCombineFactors(prev => ({ ...prev, [name]: v }))} />
+                  <Typography.Text type="secondary">{(combineFactors[name] * 100).toFixed(0)}%</Typography.Text>
+                </div>
+              ))}
+            </Card>
+
             <Card size="small" title="回测参数">
               <Form form={btForm} layout="vertical" initialValues={{ top_n: 30, rebalance_freq: 'monthly', weight_scheme: 'equal', transaction_cost_bps: 30 }}>
                 <Row gutter={16}>
@@ -586,12 +641,8 @@ export default function FactorResearch() {
             )}
 
             {btResult?.daily_returns?.length > 0 && (
-              <Card size="small" title="日收益摘要（最近 30 天）">
-                <Typography.Paragraph style={{ fontSize: 12, maxHeight: 200, overflow: 'auto' }}>
-                  {btResult.daily_returns.slice(-30).map(r =>
-                    `${r.trade_date}: strat=${r.strategy_return?.toFixed(4)} bench=${r.bench_return?.toFixed(4)} excess=${r.excess_return?.toFixed(4)}`
-                  ).join('\n')}
-                </Typography.Paragraph>
+              <Card size="small" title="策略 vs 沪深300 累计收益对比">
+                <div ref={btChartRef} style={{ width: '100%', height: 300 }} />
               </Card>
             )}
           </Space>

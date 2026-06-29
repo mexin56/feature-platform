@@ -294,53 +294,71 @@ _MARKET_EMOTION_COLUMNS = [
 
 
 def fetch_market_emotion(args, ctx):
-    """市场情绪综合指标: 腾讯指数行情 + 东财龙虎榜机构统计。"""
-    import requests as _r
+    """市场情绪综合指标: 腾讯指数(收盘价) + 乐咕市场赚钱效应(涨跌家数/涨停跌停)。"""
     dt = c.ctx_dt(ctx)
 
-    # ── 腾讯指数 ──
-    sh_close = sz_close = 0.0
-    total_amount = 0.0
+    sh_close = sz_close = total_amount = 0.0
+    up = down = flat = limit_up = limit_down = 0
+
+    # ── 腾讯指数: 收盘价 + 成交额 ──
     try:
-        resp = _r.get(
+        import httpx as _h
+        resp = _h.get(
             "https://qt.gtimg.cn/q=sh000001,sz399001",
-            headers={"User-Agent": "Mozilla/5.0"}, timeout=10,
+            headers={"User-Agent": "Mozilla/5.0", "Referer": "https://qt.gtimg.cn"},
+            timeout=10,
         )
         for line in resp.text.split("\n"):
             if "sh000001" in line:
                 parts = line.split("~")
                 if len(parts) > 4:
-                    sh_close = float(parts[3]) if parts[3] else 0.0
+                    sh_close = c.to_scalar(parts[3]) or 0.0
+                    total_amount = float(parts[37]) if parts[37] else 0.0  # 成交额(万元)
             elif "sz399001" in line:
                 parts = line.split("~")
                 if len(parts) > 4:
-                    sz_close = float(parts[3]) if parts[3] else 0.0
+                    sz_close = c.to_scalar(parts[3]) or 0.0
     except Exception:
         pass
 
-    # ── 东财 datacenter 龙虎榜机构统计 ──
-    up = down = flat = lt_up = lt_down = 0
+    # ── 乐咕市场赚钱效应: 涨跌家数/涨停跌停 ──
     try:
-        payload = _get_json(DATACENTER_URL, {
-            "reportName": "RPT_DAILYBILLBOARD_DETAILSNEW",
-            "columns": "BUY_SEAT,TRADE_DATE",
-            "pageNumber": 1, "pageSize": 500,
-            "filter": f"(TRADE_DATE='{dt}')",
-            "source": "WEB", "client": "WEB",
-        })
-        rows = (payload.get("result") or {}).get("data") or []
-        for row in rows:
-            if isinstance(row, dict):
-                bs = str(row.get("BUY_SEAT") or "")
-                lt_up += bs.count("3")  # 机构买入席位
+        import httpx as _h2
+        resp2 = _h2.get(
+            "https://legulegu.com/stockdata/market-activity",
+            headers={"User-Agent": "Mozilla/5.0", "Accept": "text/html"},
+            timeout=10,
+        )
+        from bs4 import BeautifulSoup as _BS
+        import pandas as _pd
+        soup = _BS(resp2.text, "lxml")
+        tables = soup.find_all("table")
+        if tables:
+            dfs = _pd.read_html(str(tables[0]))
+            if dfs:
+                df = dfs[0]
+                # 第1行: 上涨/下跌/平盘
+                if len(df) > 0:
+                    up = int(df.iloc[0, 1]) if _pd.notna(df.iloc[0, 1]) else 0
+                    down = int(df.iloc[0, 3]) if len(df.columns) > 3 and _pd.notna(df.iloc[0, 3]) else 0
+                    flat = int(df.iloc[0, 5]) if len(df.columns) > 5 and _pd.notna(df.iloc[0, 5]) else 0
+                # 第2行: 涨停/跌停
+                if len(df) > 1:
+                    limit_up = int(df.iloc[1, 1]) if _pd.notna(df.iloc[1, 1]) else 0
+                    limit_down = int(df.iloc[1, 3]) if len(df.columns) > 3 and _pd.notna(df.iloc[1, 3]) else 0
     except Exception:
         pass
-    lt_down = lt_up  # 近似: 机构卖方也差不多
+
+    # 成交额: 万元 → 亿
+    total_yi = round(total_amount / 10_000, 2) if total_amount else 0.0
 
     return list(_MARKET_EMOTION_COLUMNS), [(
-        dt, sh_close, sz_close, total_amount,
-        up, down, flat, lt_up, lt_down,
+        dt, sh_close, sz_close, total_yi,
+        up, down, flat, limit_up, limit_down,
     )]
+
+
+# ── 龙虎榜机构明细(含席位编码+净买卖额) ──
 
 
 _reg("lhb_detail", "龙虎榜机构明细",

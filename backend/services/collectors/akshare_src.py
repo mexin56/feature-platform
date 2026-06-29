@@ -131,6 +131,17 @@ _snap("stock_market_activity_legu", "市场赚钱效应(乐咕)",
 _snap("stock_hsgt_fund_summary", "沪深港通资金流向",
       "ak.stock_hsgt_fund_flow_summary_em 沪深港通资金流向汇总",
       "stock_hsgt_fund_flow_summary_em")
+# 沪深港通个股排行
+_snap("stock_hsgt_individual", "沪深港通个股排行",
+      "ak.stock_hsgt_individual_em 沪深港通持股排行",
+      "stock_hsgt_individual_em",
+      kw=lambda a, ctx: {"market": a.get("market", "沪股通"),
+                         "indicator": a.get("indicator", "今日排行")})
+# 行业板块资金流(历史)
+_snap("stock_sector_fund_flow_hist", "行业板块资金流历史",
+      "ak.stock_sector_fund_flow_hist_em 行业板块历史资金流(5日)",
+      "stock_sector_fund_flow_hist_em",
+      kw=lambda a, ctx: {"symbol": a.get("symbol", "小金属")})
 _reg("margin_sz_sh_daily", "融资融券(沪深)",
      "stock_margin_sse+szse 拼接,版本差异 try 兼容", "snapshot", fetch_margin)
 
@@ -143,3 +154,118 @@ _reg("stock_individual_fund_flow", "个股资金流",
 _reg("stock_board_industry_hist_em", "行业板块历史行情",
      "ak.stock_board_industry_hist_em 逐板块日K(symbols 传板块名)",
      "per_symbol", fetch_board_industry_hist)
+
+
+# ── CNN 恐惧贪婪指数 ──
+_FEAR_GREED_COLUMNS = [
+    "trade_date", "score", "rating", "previous_close",
+    "previous_1_week", "previous_1_month", "previous_1_year",
+]
+
+
+def fetch_cnn_fear_greed(args, ctx):
+    """CNN Fear & Greed Index (0-100, <25=extreme fear, >75=extreme greed).
+    数据来自 CNN Business 开放 API。"""
+    dt = c.ctx_dt(ctx)
+    try:
+        import httpx as _h
+        resp = _h.get(
+            "https://production.dataviz.cnn.io/index/fearandgreed/graphdata",
+            headers={
+                "User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                               "AppleWebKit/537.36 (KHTML, like Gecko) "
+                               "Chrome/120.0.0.0 Safari/537.36"),
+                "Accept": "application/json",
+                "Referer": "https://edition.cnn.com/",
+            },
+            timeout=15,
+        )
+        if resp.status_code != 200:
+            # 偶尔 418 限流,重试一次
+            import time as _t
+            _t.sleep(2)
+            resp = _h.get(
+                "https://production.dataviz.cnn.io/index/fearandgreed/graphdata",
+                headers={
+                    "User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                                   "AppleWebKit/537.36"),
+                    "Accept": "application/json",
+                    "Referer": "https://edition.cnn.com/",
+                },
+                timeout=15,
+            )
+        resp.raise_for_status()
+        data = resp.json()
+        fg = data.get("fear_and_greed", {})
+        score = fg.get("score")
+        rating = fg.get("rating")
+        prev_close = fg.get("previous_close")
+        prev_1w = fg.get("previous_1_week")
+        prev_1m = fg.get("previous_1_month")
+        prev_1y = fg.get("previous_1_year")
+    except Exception:
+        return list(_FEAR_GREED_COLUMNS), []
+
+    return list(_FEAR_GREED_COLUMNS), [(
+        dt, score, rating, prev_close,
+        prev_1w, prev_1m, prev_1y,
+    )]
+
+
+_reg("cnn_fear_greed", "CNN 恐惧贪婪指数",
+     "CNN Business Fear & Greed Index (0-100)",
+     "snapshot", fetch_cnn_fear_greed)
+
+
+# ── 中金所股指期货持仓龙虎榜 ──
+_CFFEX_COLUMNS = [
+    "trade_date", "variety", "contract", "rank",
+    "long_party_name", "long_open_interest", "long_open_interest_chg",
+    "short_party_name", "short_open_interest", "short_open_interest_chg",
+    "vol_party_name", "vol", "vol_chg",
+]
+
+
+def fetch_cffex_rank_table(args, ctx):
+    """中金所期货持仓龙虎榜:指定品种(默认 IF/IC/IH)前 20 大会员多空单。
+    返回所有合约合并宽表(按 rank+品种筛选),含净多头(多头-空头)计算列由下游负责。"""
+    dt = c.ctx_dt(ctx)
+    dt_nodash = dt.replace("-", "")
+    varieties = (args or {}).get("varieties", ["IF", "IC", "IH"])
+
+    import warnings as _w
+
+    with _w.catch_warnings():
+        _w.simplefilter("ignore")
+
+        result = _ak_call("get_cffex_rank_table",
+                          date=dt_nodash, vars_list=varieties)
+    if not isinstance(result, dict):
+        return list(_CFFEX_COLUMNS), []
+
+    import pandas as _pd
+    frames = []
+    for contract, df in result.items():
+        if not hasattr(df, "columns") or df.empty:
+            continue
+        df = df.copy()
+        df["contract"] = contract
+        df["trade_date"] = dt
+        frames.append(df)
+
+    if not frames:
+        return list(_CFFEX_COLUMNS), []
+    merged = _pd.concat(frames, ignore_index=True)
+
+    # Project to our column order
+    out = _pd.DataFrame()
+    for col_name in _CFFEX_COLUMNS:
+        out[col_name] = merged[col_name] if col_name in merged.columns else None
+    # Fill NaN with None
+    return list(_CFFEX_COLUMNS), [tuple(None if _pd.isna(v) else v for v in row)
+                      for row in out.itertuples(index=False)]
+
+
+_reg("cffex_rank_table", "股指期货持仓龙虎榜(中金所)",
+     "ak.get_cffex_rank_table IF/IC/IH 前20大会员多空单",
+     "snapshot", fetch_cffex_rank_table)

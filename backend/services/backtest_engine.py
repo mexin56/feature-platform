@@ -33,6 +33,8 @@ def run_backtest(
         z_parts.append(
             f'{w:.4f} * ({qn} - AVG({qn}) OVER (PARTITION BY trade_date)) '
             f'/ NULLIF(STDDEV_SAMP({qn}) OVER (PARTITION BY trade_date), 0)')
+    if not z_parts:
+        raise RuntimeError("策略未配置任何因子权重,请先添加因子")
     composite_expr = " +\n".join(z_parts)
 
     con = duckdb.connect(str(fp))
