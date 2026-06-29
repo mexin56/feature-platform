@@ -100,10 +100,11 @@ export default function Workflows() {
         end_date: end.toISOString(),
         parallel: values.parallel ?? 1,
       })
-      const parts = [`创建了 ${result.created} 个实例`]
-      if (result.restarted > 0) parts.push(`${result.restarted} 个已重新提交`)
-      if (result.skipped > 0) parts.push(`${result.skipped} 个正在运行跳过`)
-      message.success(parts.join(', '))
+      const total = result.created + result.restarted
+      const msg = total > 0
+        ? `已提交 ${total} 个实例${result.skipped > 0 ? `, ${result.skipped} 个正在运行跳过` : ''}`
+        : '没有新的实例需要提交'
+      message.success(msg)
       setBackfillModal(null)
       backfillForm.resetFields()
     } catch {
