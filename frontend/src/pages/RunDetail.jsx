@@ -33,6 +33,10 @@ function duration(started, finished) {
   if (s < 60) return `${s}s`
   const m = Math.floor(s / 60)
   const rem = s % 60
+  if (m >= 60) {
+    const h = Math.floor(m / 60)
+    return `${h}h ${m % 60}m ${rem}s`
+  }
   return `${m}m ${rem}s`
 }
 
@@ -315,7 +319,11 @@ export default function RunDetail() {
         <Descriptions.Item label="数据区间终点">{fmt(run.data_interval_end)}</Descriptions.Item>
         <Descriptions.Item label="创建时间">{fmt(run.created_at)}</Descriptions.Item>
         <Descriptions.Item label="完成时间">{fmt(run.finished_at)}</Descriptions.Item>
-        <Descriptions.Item label="总耗时">{duration(run.created_at, run.finished_at)}</Descriptions.Item>
+        <Descriptions.Item label="总耗时">
+          {run.state === 'running'
+            ? `运行中 · ${duration(run.created_at, run.finished_at)}`
+            : duration(run.created_at, run.finished_at)}
+        </Descriptions.Item>
       </Descriptions>
 
       {/* Task instances table */}
