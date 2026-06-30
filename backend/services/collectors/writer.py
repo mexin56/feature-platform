@@ -62,7 +62,8 @@ def write_market(settings, table: str, dt: str, columns: list[str],
 
 
 def _write_pg(settings, table, dt, full_cols, data):
-    """PostgreSQL 幂等写入(先删当日,再插)。"""
+    """PostgreSQL 幂等写入(先删当日,再插)。
+    如果表有 trade_date 列,按 trade_date 删除(而非 dt),因 trade_date 才是数据日期。"""
     import psycopg2
 
     conn = _pg_conn(settings)
@@ -74,7 +75,21 @@ def _write_pg(settings, table, dt, full_cols, data):
                 "WHERE table_schema='public' AND table_name=%s", [table])
             exists = cur.fetchone()[0]
             if exists:
-                cur.execute(f'DELETE FROM "{table}" WHERE dt = %s', [dt])
+                # 如果有 trade_date 列,按 trade_date 删除(数据日期);否则按 dt(采集日期)
+                cur.execute(
+                    "SELECT count(*) FROM information_schema.columns "
+                    "WHERE table_schema='public' AND table_name=%s AND column_name='trade_date'",
+                    [table])
+                has_trade_date = cur.fetchone()[0] > 0
+                if has_trade_date:
+                    # 从数据中提取唯一的 trade_date 值
+                    trade_dates = sorted(set(
+                        r[full_cols.index("trade_date")] for r in data
+                    ))
+                    for td in trade_dates:
+                        cur.execute(f'DELETE FROM "{table}" WHERE trade_date = %s', [td])
+                else:
+                    cur.execute(f'DELETE FROM "{table}" WHERE dt = %s', [dt])
             else:
                 cols_types = []
                 for i, c in enumerate(full_cols):
