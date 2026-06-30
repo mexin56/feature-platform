@@ -20,7 +20,12 @@ import { Link, useNavigate } from 'react-router-dom'
 import { api } from '../api.js'
 import StateTag from '../components/StateTag.jsx'
 
-const fmt = (iso) => (iso ? iso.slice(0, 19).replace('T', ' ') : '—')
+const fmt = (iso) => {
+  if (!iso) return '—'
+  const d = new Date(iso.endsWith('Z') ? iso : iso + 'Z')
+  const pad = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+}
 
 const RUN_TYPE_COLOR = {
   manual: 'blue',

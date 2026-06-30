@@ -35,7 +35,12 @@ const CONN_TYPE_OPTIONS = [
   { value: 'mysql', label: 'MySQL' },
   { value: 'spark', label: 'Spark' },
 ]
-const fmt = (iso) => (iso ? iso.slice(0, 19).replace('T', ' ') : '—')
+const fmt = (iso) => {
+  if (!iso) return '—'
+  const d = new Date(iso.endsWith("Z") ? iso : iso + "Z")
+  const pad = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+}
 
 /* ══════════════════════════════════════════════════════════════════
    Tab 1: 用户管理
